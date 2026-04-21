@@ -2,9 +2,21 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { extractTextFromImage } from '../ai/processOCR';
 import { classifyMessage } from '../ai/messageClassifier';
+import { geocodeLocation } from '../location/geocodeService';
 import { Need } from '../shared-types';
 
 admin.initializeApp();
+
+function extractLocationText(rawText: string): string {
+  const normalizedText = rawText.replace(/\s+/g, ' ').trim();
+  const match = normalizedText.match(/(?:\b(?:at|in|near|around)\b|\blocation\b[:\-]?)\s+([^.,;\n]+)/i);
+
+  if (match?.[1]) {
+    return match[1].trim();
+  }
+
+  return normalizedText;
+}
 
 export const handleWhatsAppWebhook = functions.https.onRequest(async (req, res) => {
   if (req.method !== 'POST') {
@@ -27,14 +39,16 @@ export const handleWhatsAppWebhook = functions.https.onRequest(async (req, res) 
     }
 
     const classification = classifyMessage(rawText, `msg-${Date.now()}`);
-    const status: Need['status'] = confidence < 0.7 ? 'needs_validation' : 'unassigned';
+    const locationText = extractLocationText(rawText);
+    const geo = await geocodeLocation(locationText);
+    const status: Need['status'] = !geo || confidence < 0.7 ? 'needs_validation' : 'unassigned';
 
     const needRef = admin.firestore().collection('needs_raw').doc();
     await needRef.set({
       needId: needRef.id,
       source: 'whatsapp',
       submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-      location: { geo: null, text: 'pending_geocode' },
+      location: { geo, text: locationText },
       category: classification.category,
       subcategory: 'pending',
       urgency: classification.classification,

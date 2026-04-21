@@ -65,6 +65,10 @@ jest.mock('../../matching/intelligentMatchingService', () => ({
   ])
 }));
 
+jest.mock('../../notifications/notifyVolunteer', () => ({
+  notifyVolunteer: jest.fn().mockResolvedValue(true)
+}));
+
 // NOW import AFTER mocks
 import { onNeedCreated } from '../../triggers/needProcessor';
 
@@ -88,6 +92,27 @@ describe('Need Processor Trigger', () => {
     
     await onNeedCreated(mockSnap as any, context as any);
     
+    expect(mockSnap.ref.update).not.toHaveBeenCalled();
+  });
+
+  it('skips matching when geo is missing', async () => {
+    const mockSnap = {
+      data: () => ({
+        status: 'unassigned',
+        location: { geo: null },
+        category: 'medical'
+      }),
+      ref: { update: jest.fn() },
+      id: 'test-need-id'
+    };
+
+    const context = {
+      params: { needId: 'test-need' },
+      resource: { name: 'projects/test/databases/(default)/documents/needs_raw/test-need' }
+    };
+
+    await onNeedCreated(mockSnap as any, context as any);
+
     expect(mockSnap.ref.update).not.toHaveBeenCalled();
   });
 
@@ -116,7 +141,7 @@ describe('Need Processor Trigger', () => {
         matchedVolunteers: expect.arrayContaining([
           expect.objectContaining({ volunteerId: 'vol-top' })
         ]),
-        status: 'unassigned'
+        status: 'pending_acceptance'
       })
     );
   });

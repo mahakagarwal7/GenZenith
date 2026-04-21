@@ -12,9 +12,11 @@ const mockFieldValue = {
   delete: jest.fn(() => ({ _methodName: 'FieldValue.delete' }))
 };
 
+let mockSet: jest.Mock;
+
 // Mock firebase-admin - MUST match exact export structure
 jest.mock('firebase-admin', () => {
-  const mockSet = jest.fn().mockResolvedValue(undefined);
+  mockSet = jest.fn().mockResolvedValue(undefined);
   
   const mockFieldValue = {
     serverTimestamp: jest.fn(() => ({ _methodName: 'FieldValue.serverTimestamp' })),
@@ -65,8 +67,13 @@ jest.mock('../../ai/messageClassifier', () => ({
   })
 }));
 
+jest.mock('../../location/geocodeService', () => ({
+  geocodeLocation: jest.fn().mockResolvedValue({ lat: 12.9716, lng: 77.5946 })
+}));
+
 // NOW import AFTER all mocks
 import { handleWhatsAppWebhook } from '../../ingestion/handleWhatsAppWebhook';
+import { geocodeLocation } from '../../location/geocodeService';
 
 describe('WhatsApp Webhook Handler', () => {
   let req: any, res: any;
@@ -98,7 +105,7 @@ describe('WhatsApp Webhook Handler', () => {
   });
 
   it('processes text-only message successfully', async () => {
-    req.body = { Body: 'Emergency medical help needed', From: '+1234567890' };
+    req.body = { Body: 'Emergency medical help needed near Central Park', From: '+1234567890' };
     await handleWhatsAppWebhook(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
@@ -107,6 +114,7 @@ describe('WhatsApp Webhook Handler', () => {
         needId: 'test-need-id'
       })
     );
+    expect(geocodeLocation).toHaveBeenCalledWith('Central Park');
   });
 
   it('handles image messages with OCR', async () => {
@@ -114,5 +122,21 @@ describe('WhatsApp Webhook Handler', () => {
     await handleWhatsAppWebhook(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalled();
+  });
+
+  it('marks needs_validation when geocoding fails', async () => {
+    (geocodeLocation as jest.Mock).mockResolvedValueOnce(null);
+    req.body = { Body: 'Need water at some unknown place', From: '+1234567890' };
+
+    await handleWhatsAppWebhook(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({
+      location: {
+        geo: null,
+        text: 'some unknown place'
+      },
+      status: 'needs_validation'
+    }));
   });
 });

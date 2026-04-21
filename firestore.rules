@@ -1,0 +1,268 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /*
+      ---------------------------------------------------------------------
+      Role + Auth Helpers
+      ---------------------------------------------------------------------
+    */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function userDocExists(uid) {
+      return exists(userPath(uid));
+    }
+
+    function userRoleFromDoc(uid) {
+      return userDocExists(uid) ? get(userPath(uid)).data.role : null;
+    }
+
+    function userRole() {
+      // Prefer custom claim role if present, then fallback to users/{uid}.role
+      return isSignedIn() && request.auth.token.role != null
+        ? request.auth.token.role
+        : (isSignedIn() ? userRoleFromDoc(request.auth.uid) : null);
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userRole() == 'admin';
+    }
+
+    function isCoordinator() {
+      return isSignedIn() && userRole() == 'coordinator';
+    }
+
+    function isVolunteer() {
+      return isSignedIn() && userRole() == 'volunteer';
+    }
+
+    function isCoordinatorOrAdmin() {
+      return isCoordinator() || isAdmin();
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    /*
+      ---------------------------------------------------------------------
+      Timestamp Validation Helpers
+      ---------------------------------------------------------------------
+    */
+    function isTimestamp(value) {
+      return value is timestamp;
+    }
+
+    function isRecentTimestamp(value) {
+      // Accepts small clock skew and blocks old/future timestamps.
+      return isTimestamp(value)
+        && value >= request.time - duration.value(1, 'days')
+        && value <= request.time + duration.value(5, 'minutes');
+    }
+
+    function hasCreateTimestamps(data) {
+      return ('createdAt' in data ? isRecentTimestamp(data.createdAt) : true)
+        && ('updatedAt' in data ? isRecentTimestamp(data.updatedAt) : true)
+        && ('submittedAt' in data ? isRecentTimestamp(data.submittedAt) : true)
+        && ('matchedAt' in data ? isRecentTimestamp(data.matchedAt) : true)
+        && ('acceptedAt' in data ? isRecentTimestamp(data.acceptedAt) : true);
+    }
+
+    function hasUpdateTimestamps(data) {
+      return ('updatedAt' in data ? isRecentTimestamp(data.updatedAt) : true)
+        && ('matchedAt' in data ? isRecentTimestamp(data.matchedAt) : true)
+        && ('acceptedAt' in data ? isRecentTimestamp(data.acceptedAt) : true);
+    }
+
+    /*
+      ---------------------------------------------------------------------
+      Schema Validation Helpers
+      ---------------------------------------------------------------------
+    */
+    function isValidGeo(geo) {
+      return geo == null
+        || (
+          geo is map
+          && geo.keys().hasAll(['lat', 'lng'])
+          && geo.lat is number
+          && geo.lng is number
+          && geo.lat >= -90 && geo.lat <= 90
+          && geo.lng >= -180 && geo.lng <= 180
+        );
+    }
+
+    function isValidNeedStatus(status) {
+      return status in ['needs_validation', 'unassigned', 'pending_acceptance', 'assigned', 'completed'];
+    }
+
+    function isValidNeedUrgency(urgency) {
+      return urgency in ['critical', 'urgent', 'normal', 'low'];
+    }
+
+    function isValidNeedDoc(data) {
+      return data is map
+        && data.keys().hasAll([
+          'needId',
+          'source',
+          'location',
+          'category',
+          'urgency',
+          'rawText',
+          'confidence',
+          'status',
+          'ngoId'
+        ])
+        && data.needId is string
+        && data.needId.size() > 0
+        && data.source in ['whatsapp', 'sms']
+        && data.location is map
+        && data.location.keys().hasAll(['geo', 'text'])
+        && isValidGeo(data.location.geo)
+        && data.location.text is string
+        && data.category is string
+        && data.category.size() > 0
+        && isValidNeedUrgency(data.urgency)
+        && data.rawText is string
+        && data.confidence is number
+        && data.confidence >= 0 && data.confidence <= 1
+        && isValidNeedStatus(data.status)
+        && data.ngoId is string
+        && (!('assignedTo' in data) || data.assignedTo == null || data.assignedTo is string)
+        && (!('contactNumber' in data) || data.contactNumber is string)
+        && (!('nextVolunteerId' in data) || data.nextVolunteerId == null || data.nextVolunteerId is string)
+        && (!('matchedVolunteers' in data) || data.matchedVolunteers is list)
+        && (!('declinedBy' in data) || data.declinedBy is list)
+        && hasCreateTimestamps(data);
+    }
+
+    function isValidVolunteerStatus(status) {
+      return status in ['available', 'on-mission', 'offline'];
+    }
+
+    function isValidVolunteerDoc(data) {
+      return data is map
+        && data.keys().hasAll([
+          'location',
+          'skills',
+          'status'
+        ])
+        && data.location is map
+        && data.location.keys().hasAll(['lat', 'lng'])
+        && data.location.lat is number
+        && data.location.lng is number
+        && data.location.lat >= -90 && data.location.lat <= 90
+        && data.location.lng >= -180 && data.location.lng <= 180
+        && data.skills is list
+        && data.skills.size() <= 50
+        && isValidVolunteerStatus(data.status)
+        && (!('historicalResponseRate' in data)
+          || (data.historicalResponseRate is number
+              && data.historicalResponseRate >= 0
+              && data.historicalResponseRate <= 1))
+        && (!('typicalCapacity' in data) || (data.typicalCapacity is int && data.typicalCapacity >= 0))
+        && (!('totalAssignments' in data) || (data.totalAssignments is int && data.totalAssignments >= 0))
+        && (!('activeTasks' in data) || (data.activeTasks is int && data.activeTasks >= 0))
+        && (!('lastActiveHour' in data)
+          || (data.lastActiveHour is int && data.lastActiveHour >= 0 && data.lastActiveHour <= 23))
+        && (!('phoneNumber' in data) || data.phoneNumber is string)
+        && (!('contactNumber' in data) || data.contactNumber is string)
+        && hasCreateTimestamps(data);
+    }
+
+    /*
+      ---------------------------------------------------------------------
+      Collection Rules
+      ---------------------------------------------------------------------
+    */
+
+    match /needs_raw/{needId} {
+      // Coordinators/admins can read all needs.
+      allow get, list: if isCoordinatorOrAdmin();
+
+      // ERROR_NEEDS_RAW_CLIENT_WRITE_BLOCKED:
+      // Client writes are blocked by design. Only Cloud Functions/Admin SDK should write.
+      // (Admin SDK bypasses security rules.)
+      allow create, update, delete: if false;
+    }
+
+    match /volunteers/{volunteerId} {
+      // Volunteers can read only their own profile. Coordinators/admins can read all.
+      allow get: if isSelf(volunteerId) || isCoordinatorOrAdmin();
+      allow list: if isCoordinatorOrAdmin();
+
+      // Volunteers can create/update only their own profile with schema checks.
+      // Coordinators/admins can manage volunteer profiles with the same schema checks.
+      allow create: if (
+          (isSelf(volunteerId) && isVolunteer())
+          || isCoordinatorOrAdmin()
+        )
+        && isValidVolunteerDoc(request.resource.data)
+        && hasCreateTimestamps(request.resource.data);
+
+      allow update: if (
+          (isSelf(volunteerId) && isVolunteer())
+          || isCoordinatorOrAdmin()
+        )
+        && isValidVolunteerDoc(request.resource.data)
+        && hasUpdateTimestamps(request.resource.data);
+
+      allow delete: if isAdmin();
+    }
+
+    match /match_logs/{logId} {
+      // Read-only for coordinators/admins.
+      allow get, list: if isCoordinatorOrAdmin();
+
+      // ERROR_MATCH_LOGS_CLIENT_WRITE_BLOCKED:
+      // Logs should be written by backend services only.
+      allow create, update, delete: if false;
+    }
+
+    match /users/{uid} {
+      // Users can read their own doc. Coordinators/admins can read all for operations.
+      allow get: if isSelf(uid) || isCoordinatorOrAdmin();
+      allow list: if isCoordinatorOrAdmin();
+
+      // Admin can create any user. A signed-in user can bootstrap only their own volunteer record.
+      allow create: if (
+          isAdmin()
+          || (
+            isSelf(uid)
+            && request.resource.data.role == 'volunteer'
+          )
+        )
+        && request.resource.data.keys().hasAll(['role'])
+        && request.resource.data.role in ['admin', 'coordinator', 'volunteer']
+        && hasCreateTimestamps(request.resource.data);
+
+      // Admin can update any user. Users can update their own profile but cannot change role.
+      allow update: if (
+          isAdmin()
+          || (
+            isSelf(uid)
+            && resource.data.role == request.resource.data.role
+          )
+        )
+        && request.resource.data.role in ['admin', 'coordinator', 'volunteer']
+        && hasUpdateTimestamps(request.resource.data);
+
+      allow delete: if isAdmin();
+    }
+
+    /*
+      ---------------------------------------------------------------------
+      Rate Limiting Notes (Rules cannot do true per-minute counters safely)
+      ---------------------------------------------------------------------
+      - Enforce request throttling in Cloud Functions (per uid/IP/phone).
+      - Use App Check for client-origin trust.
+      - Optionally store counters in a dedicated collection with server-side checks.
+      - Keep client writes narrow and backend writes through Admin SDK.
+    */
+  }
+}

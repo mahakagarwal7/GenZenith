@@ -1,0 +1,21 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Image uploads for need evidence and volunteer media.
+    // NOTE: Per-user rate limiting should be enforced in Cloud Functions/App Check,
+    // not only in Storage Rules.
+    match /uploads/{uid}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource != null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Coordinators/admins should access sensitive files through backend-controlled URLs.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
