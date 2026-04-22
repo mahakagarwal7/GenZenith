@@ -47,6 +47,7 @@ export interface Volunteer {
   location: GeoPoint;
   skills: string[];
   status: 'available' | 'on-mission' | 'offline';
+  contactNumber?: string;
   historicalResponseRate: number; // 0.0 to 1.0
   typicalCapacity: number; // max concurrent tasks
   totalAssignments: number;

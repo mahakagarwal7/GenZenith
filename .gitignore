@@ -24,3 +24,20 @@ ai-volunteer-mvp/shared/*.js.map
 .DS_Store
 Thumbs.db
 .vscode/
+
+# -----------------------------------------------
+# SECRETS — NEVER COMMIT
+# -----------------------------------------------
+# Real environment variables (contains API keys, tokens)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Google Cloud service account JSON and all credential files
+secrets/
+!secrets/README.md
+
+# Any stray JSON key files
+*.service-account.json
+service-account-*.json

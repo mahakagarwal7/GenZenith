@@ -1,20 +1,68 @@
-import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
+import { matchVolunteers } from '../matching/intelligentMatchingService';
 import { notifyVolunteer } from '../notifications/notifyVolunteer';
-
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
+import { supabase } from '../lib/supabaseClient';
+import type { HttpRequest, HttpResponse } from '../lib/httpTypes';
 
 type VolunteerResponse = 'YES' | 'NO';
 
-export const volunteerResponseWebhook = functions.https.onRequest(async (req, res) => {
+type NeedRow = {
+  need_id: string;
+  status: string;
+  assigned_to: string | null;
+  location_geo: unknown | null;
+};
+
+async function loadNeed(needId: string): Promise<NeedRow | null> {
+  const { data, error } = await supabase
+    .from('needs')
+    .select('need_id, status, assigned_to, location_geo')
+    .eq('need_id', needId)
+    .maybeSingle<NeedRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ?? null;
+}
+
+async function assignNeed(needId: string, volunteerId: string): Promise<void> {
+  const { error } = await supabase
+    .from('needs')
+    .update({
+      assigned_to: volunteerId,
+      status: 'assigned',
+      updated_at: new Date().toISOString()
+    })
+    .eq('need_id', needId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function markNeedPending(needId: string, nextVolunteerId: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('needs')
+    .update({
+      assigned_to: null,
+      status: nextVolunteerId ? 'pending_acceptance' : 'unassigned',
+      updated_at: new Date().toISOString()
+    })
+    .eq('need_id', needId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function volunteerResponseWebhook(req: HttpRequest, res: HttpResponse): Promise<void> {
   if (req.method !== 'POST') {
     res.status(405).send('Method Not Allowed');
     return;
   }
 
-  const { needId, volunteerId, response } = req.body || {};
+  const { needId, volunteerId, response } = (req.body || {}) as Record<string, string | undefined>;
   const normalizedResponse = String(response || '').trim().toUpperCase() as VolunteerResponse;
 
   if (!needId || !volunteerId || (normalizedResponse !== 'YES' && normalizedResponse !== 'NO')) {
@@ -22,45 +70,22 @@ export const volunteerResponseWebhook = functions.https.onRequest(async (req, re
     return;
   }
 
-  const needRef = admin.firestore().collection('needs_raw').doc(String(needId));
-
   try {
     let nextVolunteerId: string | null = null;
+    const need = await loadNeed(String(needId));
 
-    await admin.firestore().runTransaction(async (tx) => {
-      const needSnap = await tx.get(needRef);
-      if (!needSnap.exists) {
-        throw new Error('NEED_NOT_FOUND');
-      }
+    if (!need) {
+      res.status(404).json({ error: 'Need not found' });
+      return;
+    }
 
-      const needData = (needSnap.data() || {}) as Record<string, any>;
-      const matchedVolunteers = Array.isArray(needData.matchedVolunteers) ? needData.matchedVolunteers : [];
-
-      if (normalizedResponse === 'YES') {
-        tx.update(needRef, {
-          assignedTo: volunteerId,
-          status: 'assigned',
-          acceptedBy: volunteerId,
-          acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        return;
-      }
-
-      const remainingMatches = matchedVolunteers.filter(
-        (match: any) => match?.volunteerId && match.volunteerId !== volunteerId
-      );
-      nextVolunteerId = remainingMatches[0]?.volunteerId || null;
-
-      tx.update(needRef, {
-        matchedVolunteers: remainingMatches,
-        status: nextVolunteerId ? 'pending_acceptance' : 'unassigned',
-        assignedTo: null,
-        nextVolunteerId,
-        declinedBy: admin.firestore.FieldValue.arrayUnion(volunteerId),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    });
+    if (normalizedResponse === 'YES') {
+      await assignNeed(String(needId), volunteerId);
+    } else {
+      const matches = await matchVolunteers(String(needId), 10, [volunteerId]);
+      nextVolunteerId = matches[0]?.volunteerId || null;
+      await markNeedPending(String(needId), nextVolunteerId);
+    }
 
     if (normalizedResponse === 'NO' && nextVolunteerId) {
       await notifyVolunteer(nextVolunteerId, String(needId));
@@ -75,12 +100,7 @@ export const volunteerResponseWebhook = functions.https.onRequest(async (req, re
       nextVolunteerId
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'NEED_NOT_FOUND') {
-      res.status(404).json({ error: 'Need not found' });
-      return;
-    }
-
     console.error('Volunteer response webhook failed:', error);
     res.status(500).json({ error: 'Failed to process response' });
   }
-});
+  }

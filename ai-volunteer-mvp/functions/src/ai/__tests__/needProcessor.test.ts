@@ -1,63 +1,46 @@
 // functions/src/ai/__tests__/needProcessor.test.ts
 
-// Set env vars BEFORE any imports
 process.env.GCLOUD_PROJECT = 'test-project';
+process.env.SUPABASE_URL = 'https://example.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
 
-// Mock firebase-admin with COMPLETE structure
-jest.mock('firebase-admin', () => {
-  const mockUpdate = jest.fn().mockResolvedValue(undefined);
-  const mockAdd = jest.fn().mockResolvedValue({ id: 'log-id' });
-  
-  const mockFieldValue = {
-    serverTimestamp: jest.fn(() => ({ _methodName: 'FieldValue.serverTimestamp' })),
-    arrayUnion: jest.fn((...args: any[]) => ({ _methodName: 'FieldValue.arrayUnion', args })),
-    arrayRemove: jest.fn((...args: any[]) => ({ _methodName: 'FieldValue.arrayRemove', args })),
-    increment: jest.fn((n: number) => ({ _methodName: 'FieldValue.increment', value: n })),
-    delete: jest.fn(() => ({ _methodName: 'FieldValue.delete' }))
-  };
-  
-  const firestoreFn = jest.fn(() => ({
-    collection: jest.fn().mockReturnValue({
-      doc: jest.fn().mockReturnValue({
-        get: jest.fn().mockResolvedValue({
-          exists: true,
-          data: () => ({ 
-            status: 'unassigned', 
-            location: { geo: { lat: 12.97, lng: 77.59 } },
-            category: 'medical'
-          })
-        }),
-        update: mockUpdate,
-        id: 'test-need-id'
-      }),
-      add: mockAdd
-    }),
-    FieldValue: mockFieldValue
-  })) as any;
-  
-  // Add FieldValue as static property
-  firestoreFn.FieldValue = mockFieldValue;
-  
-  return {
-    initializeApp: jest.fn(),
-    firestore: firestoreFn,
-    FieldValue: mockFieldValue
-  };
+const mockNeedSingle = jest.fn().mockResolvedValue({
+  data: {
+    need_id: 'need-123',
+    status: 'unassigned',
+    location_geo: 'SRID=4326;POINT(77.59 12.97)'
+  },
+  error: null
 });
 
-// Mock firebase-functions
-jest.mock('firebase-functions', () => ({
-  https: {
-    onRequest: (fn: any) => fn
-  },
-  firestore: {
-    document: () => ({
-      onCreate: (fn: any) => fn
+const mockNeedSelect = jest.fn().mockReturnValue({
+  eq: jest.fn().mockReturnValue({ maybeSingle: mockNeedSingle })
+});
+
+const mockNeedUpdate = jest.fn().mockResolvedValue({ data: null, error: null });
+const mockMatchLogInsert = jest.fn().mockResolvedValue({ data: null, error: null });
+
+jest.mock('../../lib/supabaseClient', () => ({
+  supabase: {
+    from: jest.fn((table: string) => {
+      if (table === 'needs') {
+        return {
+          select: mockNeedSelect,
+          update: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({ data: null, error: null }) }))
+        };
+      }
+
+      if (table === 'match_logs') {
+        return {
+          insert: mockMatchLogInsert
+        };
+      }
+
+      return {};
     })
   }
 }));
 
-// Mock matching service
 jest.mock('../../matching/intelligentMatchingService', () => ({
   matchVolunteers: jest.fn().mockResolvedValue([
     { volunteerId: 'vol-top', score: 0.85 },
@@ -69,80 +52,96 @@ jest.mock('../../notifications/notifyVolunteer', () => ({
   notifyVolunteer: jest.fn().mockResolvedValue(true)
 }));
 
-// NOW import AFTER mocks
 import { onNeedCreated } from '../../triggers/needProcessor';
+import { matchVolunteers } from '../../matching/intelligentMatchingService';
+import { notifyVolunteer } from '../../notifications/notifyVolunteer';
 
 describe('Need Processor Trigger', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('skips needs flagged for manual validation', async () => {
-    // 👇 snapshot.data() must be a METHOD returning object with status
-    const mockSnap = {
-      data: () => ({ status: 'needs_validation' }),
-      ref: { update: jest.fn() },
-      id: 'test-need-id'
+  it('skips non-POST requests', async () => {
+    const req = { method: 'GET', body: {} };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      json: jest.fn()
     };
-    
-    const context = { 
-      params: { needId: 'test-need' },
-      resource: { name: 'projects/test/databases/(default)/documents/needs_raw/test-need' }
-    };
-    
-    await onNeedCreated(mockSnap as any, context as any);
-    
-    expect(mockSnap.ref.update).not.toHaveBeenCalled();
+
+    await onNeedCreated(req as any, res as any);
+
+    expect(res.status).toHaveBeenCalledWith(405);
+    expect(res.send).toHaveBeenCalledWith('Method Not Allowed');
   });
 
-  it('skips matching when geo is missing', async () => {
-    const mockSnap = {
-      data: () => ({
-        status: 'unassigned',
-        location: { geo: null },
-        category: 'medical'
-      }),
-      ref: { update: jest.fn() },
-      id: 'test-need-id'
+  it('returns bad request when need id is missing', async () => {
+    const req = { method: 'POST', body: {} };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      json: jest.fn()
     };
 
-    const context = {
-      params: { needId: 'test-need' },
-      resource: { name: 'projects/test/databases/(default)/documents/needs_raw/test-need' }
-    };
+    await onNeedCreated(req as any, res as any);
 
-    await onNeedCreated(mockSnap as any, context as any);
-
-    expect(mockSnap.ref.update).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Missing need id' }));
   });
 
-  it('runs matching and updates document for valid needs', async () => {
-    const mockUpdate = jest.fn().mockResolvedValue(undefined);
-    
-    const mockSnap = {
-      data: () => ({ 
-        status: 'unassigned', 
-        location: { geo: { lat: 12.97, lng: 77.59 } },
-        category: 'medical'
-      }),
-      ref: { update: mockUpdate },
-      id: 'test-need-id'
+  it('processes a valid need insert and updates status to pending_acceptance', async () => {
+    const req = {
+      method: 'POST',
+      body: {
+        type: 'INSERT',
+        table: 'needs',
+        record: { need_id: 'need-123' }
+      }
     };
-    
-    const context = { 
-      params: { needId: 'test-need' },
-      resource: { name: 'projects/test/databases/(default)/documents/needs_raw/test-need' }
+
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      json: jest.fn()
     };
-    
-    await onNeedCreated(mockSnap as any, context as any);
-    
-    expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        matchedVolunteers: expect.arrayContaining([
-          expect.objectContaining({ volunteerId: 'vol-top' })
-        ]),
-        status: 'pending_acceptance'
-      })
-    );
+
+    await onNeedCreated(req as any, res as any);
+
+    expect(matchVolunteers).toHaveBeenCalledWith('need-123');
+    expect(notifyVolunteer).toHaveBeenCalledWith('vol-top', 'need-123');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, needId: 'need-123' }));
+  });
+
+  it('skips needs flagged for validation', async () => {
+    mockNeedSingle.mockResolvedValueOnce({
+      data: {
+        need_id: 'need-456',
+        status: 'needs_validation',
+        location_geo: null
+      },
+      error: null
+    });
+
+    const req = {
+      method: 'POST',
+      body: {
+        type: 'INSERT',
+        table: 'needs',
+        record: { need_id: 'need-456' }
+      }
+    };
+
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      json: jest.fn()
+    };
+
+    await onNeedCreated(req as any, res as any);
+
+    expect(matchVolunteers).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true, needId: 'need-456' }));
   });
 });

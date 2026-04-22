@@ -1,9 +1,8 @@
-import * as admin from 'firebase-admin';
+import { getVolunteer } from '../lib/supabaseClient';
 import { VolunteerInsight } from '../shared-types';
 
 export async function analyzeVolunteer(volunteerId: string): Promise<VolunteerInsight> {
-  const db = admin.firestore();
-  const vol = (await db.collection('volunteers').doc(volunteerId).get())?.data();
+  const vol = await getVolunteer(volunteerId);
   if (!vol) throw new Error('Volunteer not found');
 
   const hour = new Date().getHours();

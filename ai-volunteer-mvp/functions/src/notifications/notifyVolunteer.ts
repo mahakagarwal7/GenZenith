@@ -1,5 +1,4 @@
-import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
+import { getVolunteer } from '../lib/supabaseClient';
 
 type TwilioConfig = {
   accountSid?: string;
@@ -9,19 +8,12 @@ type TwilioConfig = {
 
 function getTwilioConfig(): TwilioConfig {
   const env = process.env;
-  const runtimeConfig = typeof functions.config === 'function' ? functions.config() : {};
 
   return {
-    accountSid: env.TWILIO_ACCOUNT_SID || env.TWILIO_SID || (runtimeConfig as any)?.twilio?.account_sid,
-    authToken: env.TWILIO_AUTH_TOKEN || (runtimeConfig as any)?.twilio?.auth_token,
-    fromNumber: env.TWILIO_PHONE_NUMBER || env.TWILIO_FROM_NUMBER || (runtimeConfig as any)?.twilio?.phone_number
+    accountSid: env.TWILIO_ACCOUNT_SID || env.TWILIO_SID,
+    authToken: env.TWILIO_AUTH_TOKEN,
+    fromNumber: env.TWILIO_PHONE_NUMBER || env.TWILIO_FROM_NUMBER
   };
-}
-
-function getVolunteerPhone(volunteerData: Record<string, unknown>): string | null {
-  const phone = volunteerData.phone || volunteerData.phoneNumber || volunteerData.contactNumber || volunteerData.mobile;
-
-  return typeof phone === 'string' && phone.trim() ? phone.trim() : null;
 }
 
 export async function notifyVolunteer(volunteerId: string, needId: string): Promise<boolean> {
@@ -32,13 +24,12 @@ export async function notifyVolunteer(volunteerId: string, needId: string): Prom
       return false;
     }
 
-    const volunteerSnap = await admin.firestore().collection('volunteers').doc(volunteerId).get();
-    const volunteerData = volunteerSnap.data();
-    if (!volunteerData) {
+    const volunteer = await getVolunteer(volunteerId);
+    if (!volunteer) {
       return false;
     }
 
-    const toNumber = getVolunteerPhone(volunteerData as Record<string, unknown>);
+    const toNumber = volunteer.contactNumber ?? null;
     if (!toNumber) {
       console.error(`No phone number found for volunteer ${volunteerId}`);
       return false;

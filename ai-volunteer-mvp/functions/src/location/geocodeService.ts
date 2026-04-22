@@ -1,16 +1,12 @@
-import * as functions from 'firebase-functions';
-
 export async function geocodeLocation(text: string): Promise<{ lat: number; lng: number } | null> {
   if (!text.trim()) {
     return null;
   }
 
-  const config = typeof functions.config === 'function' ? functions.config() : {};
   const apiKey =
     process.env.GOOGLE_MAPS_API_KEY ||
     process.env.GOOGLE_MAPS_APIKEY ||
-    (config as any)?.googlemaps?.key ||
-    (config as any)?.googlemaps?.api_key;
+    process.env.GOOGLE_MAPS_KEY;
 
   if (!apiKey) {
     console.error('Google Maps API key is not configured.');

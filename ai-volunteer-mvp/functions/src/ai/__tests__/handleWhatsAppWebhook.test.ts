@@ -2,48 +2,20 @@
 
 // Set env vars BEFORE any imports
 process.env.GCLOUD_PROJECT = 'test-project';
+process.env.DEFAULT_NGO_ID = 'test-ngo';
+const expectedNgoId = process.env.DEFAULT_NGO_ID;
 
-// Create FieldValue mock ONCE - this is the KEY fix
-const mockFieldValue = {
-  serverTimestamp: jest.fn(() => ({ _methodName: 'FieldValue.serverTimestamp' })),
-  arrayUnion: jest.fn((...args: any[]) => ({ _methodName: 'FieldValue.arrayUnion', args })),
-  arrayRemove: jest.fn((...args: any[]) => ({ _methodName: 'FieldValue.arrayRemove', args })),
-  increment: jest.fn((n: number) => ({ _methodName: 'FieldValue.increment', value: n })),
-  delete: jest.fn(() => ({ _methodName: 'FieldValue.delete' }))
-};
+import {
+  mockInsert,
+  mockSupabaseFrom,
+  setupSupabaseUnitTestLifecycle
+} from '../../__tests__/supabaseTestSetup';
 
-let mockSet: jest.Mock;
-
-// Mock firebase-admin - MUST match exact export structure
-jest.mock('firebase-admin', () => {
-  mockSet = jest.fn().mockResolvedValue(undefined);
-  
-  const mockFieldValue = {
-    serverTimestamp: jest.fn(() => ({ _methodName: 'FieldValue.serverTimestamp' })),
-    arrayUnion: jest.fn((...args: any[]) => ({ _methodName: 'FieldValue.arrayUnion', args })),
-    arrayRemove: jest.fn((...args: any[]) => ({ _methodName: 'FieldValue.arrayRemove', args })),
-    increment: jest.fn((n: number) => ({ _methodName: 'FieldValue.increment', value: n })),
-    delete: jest.fn(() => ({ _methodName: 'FieldValue.delete' }))
-  };
-  
-  const firestoreFn = jest.fn(() => ({
-    collection: jest.fn().mockReturnThis(),
-    doc: jest.fn().mockReturnValue({
-      id: 'test-need-id',
-      set: mockSet
-    }),
-    FieldValue: mockFieldValue
-  })) as any;
-  
-  // Assign FieldValue as static property on the firestore function
-  firestoreFn.FieldValue = mockFieldValue;
-  
-  return {
-    initializeApp: jest.fn(),
-    firestore: firestoreFn,
-    FieldValue: mockFieldValue
-  };
-});
+jest.mock('../../lib/supabaseClient', () => ({
+  supabase: {
+    from: mockSupabaseFrom
+  }
+}));
 
 // Mock AI modules
 jest.mock('../../ai/processOCR', () => ({
@@ -78,8 +50,9 @@ import { geocodeLocation } from '../../location/geocodeService';
 describe('WhatsApp Webhook Handler', () => {
   let req: any, res: any;
 
+  setupSupabaseUnitTestLifecycle();
+
   beforeEach(() => {
-    jest.clearAllMocks();
     req = { method: 'POST', body: {} };
     res = { 
       status: jest.fn().mockReturnThis(), 
@@ -115,6 +88,15 @@ describe('WhatsApp Webhook Handler', () => {
       })
     );
     expect(geocodeLocation).toHaveBeenCalledWith('Central Park');
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      need_id: expect.any(String),
+      source: 'whatsapp',
+      location_geo: 'SRID=4326;POINT(77.5946 12.9716)',
+      location_text: 'Central Park',
+      category: 'water_supply',
+      status: 'unassigned',
+      ngo_id: expectedNgoId
+    }));
   });
 
   it('handles image messages with OCR', async () => {
@@ -131,11 +113,9 @@ describe('WhatsApp Webhook Handler', () => {
     await handleWhatsAppWebhook(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockSet).toHaveBeenCalledWith(expect.objectContaining({
-      location: {
-        geo: null,
-        text: 'some unknown place'
-      },
+    expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      location_geo: null,
+      location_text: 'some unknown place',
       status: 'needs_validation'
     }));
   });
