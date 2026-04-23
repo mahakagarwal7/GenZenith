@@ -37,6 +37,37 @@ function parsePoint(value: unknown): { lat: number; lng: number } | null {
         return { lat, lng };
       }
     }
+
+    if (/^[0-9a-fA-F]+$/.test(value) && value.length >= 42) {
+      try {
+        const bytes = new Uint8Array(value.length / 2);
+        for (let i = 0; i < value.length; i += 2) {
+          bytes[i / 2] = Number.parseInt(value.slice(i, i + 2), 16);
+        }
+
+        const view = new DataView(bytes.buffer);
+        const littleEndian = view.getUint8(0) === 1;
+        const geomType = view.getUint32(1, littleEndian);
+        const hasSrid = (geomType & 0x20000000) !== 0;
+        const baseType = geomType & 0x000000ff;
+
+        if (baseType === 1) {
+          let offset = 5;
+          if (hasSrid) {
+            offset += 4;
+          }
+
+          const lng = view.getFloat64(offset, littleEndian);
+          const lat = view.getFloat64(offset + 8, littleEndian);
+
+          if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+            return { lat, lng };
+          }
+        }
+      } catch {
+        // Ignore invalid EWKB payloads and fall through to null.
+      }
+    }
   }
 
   return null;

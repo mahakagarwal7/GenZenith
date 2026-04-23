@@ -12,10 +12,11 @@ A comprehensive guide for setting up GenZenith AI Volunteer Matching Platform fr
 4. [Project Initialization](#project-initialization)
 5. [Database Setup](#database-setup)
 6. [External API Keys](#external-api-keys)
-7. [Running the Project](#running-the-project)
-8. [Testing the Pipeline](#testing-the-pipeline)
-9. [Troubleshooting](#troubleshooting)
-10. [Quick Reference Commands](#quick-reference-commands)
+7. [ngrok + WhatsApp Sandbox Webhook](#ngrok--whatsapp-sandbox-webhook)
+8. [Running the Project](#running-the-project)
+9. [Testing the Pipeline](#testing-the-pipeline)
+10. [Troubleshooting](#troubleshooting)
+11. [Quick Reference Commands](#quick-reference-commands)
 
 ---
 
@@ -319,15 +320,114 @@ VALUES (
    - Auth Token → `TWILIO_AUTH_TOKEN`
 4. Go to **Phone Numbers** → Get a **Twilio Phone Number**
    - Copy number → `TWILIO_PHONE_NUMBER`
-5. For WhatsApp: Get a **WhatsApp Business Phone Number** (optional)
-   - Copy number → `TWILIO_WHATSAPP_NUMBER`
+5. For WhatsApp Sandbox use:
+   - `TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886`
 6. Update `.env`:
    ```env
    TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    TWILIO_AUTH_TOKEN=your_auth_token_here
    TWILIO_PHONE_NUMBER=+1234567890
-   TWILIO_WHATSAPP_NUMBER=whatsapp:+1234567890
+   TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
    ```
+
+---
+
+## ngrok + WhatsApp Sandbox Webhook
+
+Twilio cannot call `127.0.0.1` directly. Use ngrok to expose your local Supabase functions URL.
+
+### Step 1: Install ngrok
+
+- Download from [ngrok](https://ngrok.com/download)
+- Verify:
+  ```powershell
+  ngrok version
+  ```
+
+### Step 2: Add your ngrok auth token
+
+1. Open [ngrok dashboard](https://dashboard.ngrok.com)
+2. Copy your auth token
+3. Run:
+   ```powershell
+   ngrok config add-authtoken <YOUR_NGROK_TOKEN>
+   ```
+
+If you are setting this up on a teammate's machine, each person must do this once on their own device.
+
+### Step 3: Start ngrok tunnel
+
+```powershell
+ngrok http 54321
+```
+
+Copy the HTTPS forwarding URL, for example:
+
+`https://abcd-1234.ngrok-free.app`
+
+Open the local ngrok inspector while testing:
+
+```powershell
+# Browser: http://127.0.0.1:4040
+```
+
+### Step 4: Configure Twilio WhatsApp Sandbox inbound URL
+
+In Twilio Console:
+
+1. Go to **Messaging** → **Try it out** → **Send a WhatsApp message**
+2. Open **Sandbox settings** tab
+3. Set **When a message comes in** to:
+
+   `https://abcd-1234.ngrok-free.app/functions/v1/volunteer-response`
+
+4. Method: **POST**
+5. Click **Save**
+
+### Step 5: Join Sandbox from test devices
+
+Every WhatsApp number that should receive sandbox messages must join sandbox first.
+
+- Send the sandbox join code (shown in Twilio Sandbox page) to `+14155238886`
+- If not joined, Twilio returns error `63015`
+
+### Step 6: Team Setup Checklist for WhatsApp Testing
+
+Use this exact order on each teammate's device:
+
+```powershell
+# 1. Start Supabase local stack
+cd ai-volunteer-mvp
+npx supabase start --exclude logflare
+
+# 2. Apply database migrations
+npx supabase db push --local
+
+# 3. Serve the webhook functions in separate terminals
+npx supabase functions serve whatsapp-webhook --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+npx supabase functions serve need-created --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+npx supabase functions serve volunteer-response --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+
+# 4. Start the ngrok tunnel
+ngrok http 54321
+```
+
+After ngrok starts, copy the HTTPS forwarding URL and paste it into the Twilio Sandbox "When a message comes in" webhook:
+
+```text
+https://<your-ngrok-subdomain>.ngrok-free.app/functions/v1/volunteer-response
+```
+
+The current flow uses the WhatsApp webhook to create a need, then the volunteer response webhook to complete the YES/NO assignment loop.
+
+### Step 7: End-to-End WhatsApp Test Flow
+
+1. Send a WhatsApp message from the requester phone to the sandbox number with a real need description.
+2. Confirm the reply includes the Need ID and the instruction to reply YES for volunteer details.
+3. Confirm the assigned volunteer receives the matching message.
+4. Reply `YES` from the volunteer phone.
+5. Confirm the requester receives the assigned volunteer details in WhatsApp, including name, phone, city, skills, and volunteer ID.
+6. If the reply does not arrive, check Twilio Messaging Logs and the ngrok inspector at `http://127.0.0.1:4040`.
 
 ---
 
@@ -369,7 +469,7 @@ pip install --user -r requirements.txt
 
 ```powershell
 # In first terminal (still running from earlier)
-supabase start
+npx supabase start --exclude logflare
 # Keep this window open
 ```
 
@@ -379,10 +479,14 @@ supabase start
 # Open new terminal
 cd ai-volunteer-mvp
 
-# Serve the three edge functions
-supabase functions serve whatsapp-webhook --env-file ../.env
-supabase functions serve volunteer-response --env-file ../.env
-supabase functions serve need-created --env-file ../.env
+# Serve the WhatsApp request webhook
+npx supabase functions serve whatsapp-webhook --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+
+# Serve the need-created trigger
+npx supabase functions serve need-created --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+
+# Serve the volunteer response webhook
+npx supabase functions serve volunteer-response --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
 ```
 
 **Watch for:**
@@ -394,7 +498,17 @@ Serving functions on http://127.0.0.1:54321/functions/v1/<function-name>
   - http://127.0.0.1:54321/functions/v1/need-created
 ```
 
-### Terminal 3: Python Prediction Service
+### Terminal 3: ngrok (required for WhatsApp replies)
+
+```powershell
+ngrok http 54321
+```
+
+Keep this terminal open. The status must stay `online`.
+
+If you need to reconfigure Twilio after restarting ngrok, copy the new HTTPS URL and update the Sandbox webhook again.
+
+### Terminal 4: Python Prediction Service
 
 ```powershell
 # Open another new terminal
@@ -579,10 +693,31 @@ supabase start
 1. Verify `.env` file exists in project root
 2. Check `.env` has correct values (not empty)
 3. Restart terminals after editing `.env`
-4. For edge functions, use:
+4. For edge functions, use absolute env path and workdir:
    ```powershell
-   supabase functions serve whatsapp-webhook --env-file ../.env
+   npx supabase functions serve volunteer-response --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
    ```
+
+### ngrok 503 Service Unavailable
+
+**Problem:** ngrok request shows `503 Service Unavailable`
+
+**Cause:** Local edge function runtime is not running.
+
+**Solution:**
+
+1. Start Supabase: `npx supabase start --exclude logflare`
+2. Start function serve command with `--workdir`
+3. Recheck ngrok dashboard `http://127.0.0.1:4040`
+
+### Twilio Error 63015 (Sandbox)
+
+**Problem:** `Channel Sandbox can only send messages to phone numbers that have joined the Sandbox`
+
+**Solution:**
+
+1. From each test phone, send the sandbox join code to `+14155238886`
+2. Retry the flow after joining
 
 ### Google Vision Returns 0% Confidence
 
@@ -641,7 +776,7 @@ npm test
 
 ```powershell
 # Start local Supabase stack
-supabase start
+npx supabase start --exclude logflare
 
 # Stop Supabase
 supabase stop
@@ -662,14 +797,19 @@ supabase db reset --linked  # for production
 ### Serving Functions Locally
 
 ```powershell
-# Serve all three functions
+# Serve the local WhatsApp workflow in separate terminals
 cd ai-volunteer-mvp
-supabase functions serve whatsapp-webhook --env-file ../.env
-supabase functions serve volunteer-response --env-file ../.env
-supabase functions serve need-created --env-file ../.env
+npx supabase functions serve whatsapp-webhook --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+npx supabase functions serve need-created --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+npx supabase functions serve volunteer-response --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
 
-# Serve single function
-supabase functions serve whatsapp-webhook --env-file ../.env
+# Start ngrok for Twilio inbound webhook testing
+ngrok http 54321
+
+# If container conflict occurs
+npx supabase stop --project-id ai-volunteer-mvp
+docker rm -f supabase_edge_runtime_ai-volunteer-mvp
+npx supabase start --exclude logflare
 ```
 
 ### Node Commands
@@ -789,17 +929,23 @@ supabase functions serve whatsapp-webhook --env-file ../.env
 
 ```powershell
 # Terminal 1: Supabase
-supabase start
+cd ai-volunteer-mvp
+npx supabase start --exclude logflare
 
 # Terminal 2: Edge Functions
 cd ai-volunteer-mvp
-supabase functions serve whatsapp-webhook --env-file ../.env
+npx supabase functions serve whatsapp-webhook --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+npx supabase functions serve need-created --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
+npx supabase functions serve volunteer-response --env-file "C:\Users\<YOUR_USER>\GenZenith\.env" --workdir "C:\Users\<YOUR_USER>\GenZenith\ai-volunteer-mvp"
 
-# Terminal 3: Run tests
+# Terminal 3: ngrok (for Twilio inbound)
+ngrok http 54321
+
+# Terminal 4: Run tests
 cd ai-volunteer-mvp/functions
 npm test
 
-# Terminal 4: Python service (optional)
+# Terminal 5: Python service (optional)
 cd ai-volunteer-mvp/prediction-service
 python needPredictionService.py
 ```

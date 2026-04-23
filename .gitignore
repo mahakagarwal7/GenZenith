@@ -25,6 +25,9 @@ ai-volunteer-mvp/shared/*.js.map
 Thumbs.db
 .vscode/
 
+# Local Supabase CLI metadata at repo root
+/supabase/
+
 # -----------------------------------------------
 # SECRETS — NEVER COMMIT
 # -----------------------------------------------

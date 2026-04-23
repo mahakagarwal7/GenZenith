@@ -4,6 +4,48 @@ import { jsonResponse, methodNotAllowed, parseJsonBody } from '../_shared/http.t
 const DEFAULT_NGO_ID = Deno.env.get('DEFAULT_NGO_ID');
 const NEED_EVIDENCE_BUCKET = Deno.env.get('SUPABASE_NEED_EVIDENCE_BUCKET');
 
+type TwilioConfig = {
+  sid: string;
+  token: string;
+  from: string;
+};
+
+function getTwilioConfig(): TwilioConfig | null {
+  const sid = Deno.env.get('TWILIO_ACCOUNT_SID') || Deno.env.get('TWILIO_SID');
+  const token = Deno.env.get('TWILIO_AUTH_TOKEN');
+  const from = Deno.env.get('TWILIO_WHATSAPP_NUMBER') || Deno.env.get('TWILIO_PHONE_NUMBER') || Deno.env.get('TWILIO_FROM_NUMBER');
+  if (!sid || !token || !from) return null;
+  return { sid, token, from };
+}
+
+async function sendTwilioMessage(to: string, body: string): Promise<void> {
+  const config = getTwilioConfig();
+  if (!config) {
+    console.warn('Twilio config missing; skipping requester notification.');
+    return;
+  }
+
+  const auth = btoa(`${config.sid}:${config.token}`);
+  const payload = new URLSearchParams({
+    To: to,
+    From: config.from,
+    Body: body,
+  });
+
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${config.sid}/Messages.json`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: payload,
+  });
+
+  if (!response.ok) {
+    console.error('Twilio requester notification failed:', response.status, await response.text());
+  }
+}
+
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   medical: ['blood', 'doctor', 'hospital', 'medicine', 'injury', 'accident', 'bleeding'],
   water_supply: ['water', 'tanker', 'dry', 'dehydration', 'well', 'pipeline'],
@@ -254,17 +296,42 @@ Deno.serve(async (req) => {
     return methodNotAllowed();
   }
 
-  const body = await parseJsonBody(req);
+  const contentType = req.headers.get('content-type') ?? '';
+  let body: Record<string, unknown> = {};
+
+  const isTwilioForm = contentType.includes('application/x-www-form-urlencoded');
+  if (isTwilioForm) {
+    const raw = await req.text();
+    const params = new URLSearchParams(raw);
+    for (const [key, value] of params.entries()) {
+      body[key] = value;
+    }
+  } else {
+    body = await parseJsonBody(req);
+  }
+
   const incomingText = typeof body.Body === 'string' ? body.Body : '';
   const mediaUrl = typeof body.MediaUrl0 === 'string' ? body.MediaUrl0 : '';
   const from = typeof body.From === 'string' ? body.From : null;
 
   if (!incomingText && !mediaUrl) {
+    if (isTwilioForm) {
+      return new Response('<Response><Message>Missing message content.</Message></Response>', {
+        status: 400,
+        headers: { 'Content-Type': 'text/xml' },
+      });
+    }
     return jsonResponse({ error: 'Missing payload' }, 400);
   }
 
   try {
     if (!DEFAULT_NGO_ID) {
+      if (isTwilioForm) {
+        return new Response('<Response><Message>Service not configured.</Message></Response>', {
+          status: 500,
+          headers: { 'Content-Type': 'text/xml' },
+        });
+      }
       return jsonResponse({ error: 'Missing DEFAULT_NGO_ID configuration' }, 500);
     }
 
@@ -323,9 +390,30 @@ Deno.serve(async (req) => {
       throw error;
     }
 
-    return jsonResponse({ status: 'ok', needId: data?.need_id || needId }, 200);
+    const responseNeedId = data?.need_id || needId;
+    if (from) {
+      await sendTwilioMessage(
+        from,
+        `Request received. Your Need ID is ${responseNeedId}. We are matching a volunteer now. Reply YES to receive the assigned volunteer details.`,
+      );
+    }
+
+    if (isTwilioForm) {
+      return new Response(
+        `<Response><Message>Request received. Your Need ID is ${responseNeedId}. We are matching a volunteer now. Reply YES to receive the assigned volunteer details.</Message></Response>`,
+        { status: 200, headers: { 'Content-Type': 'text/xml' } },
+      );
+    }
+
+    return jsonResponse({ status: 'ok', needId: responseNeedId }, 200);
   } catch (error) {
     console.error('whatsapp-webhook failed:', error);
+    if (isTwilioForm) {
+      return new Response('<Response><Message>Sorry, we could not process your request.</Message></Response>', {
+        status: 500,
+        headers: { 'Content-Type': 'text/xml' },
+      });
+    }
     return jsonResponse({ error: 'Pipeline failed' }, 500);
   }
 });
