@@ -127,7 +127,7 @@ export function SubmissionForm() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${anonKey}`,
           apikey: anonKey,
-        },
+        } as HeadersInit,
         body: JSON.stringify(payload),
       });
 

@@ -71,6 +71,10 @@ export default function IngestPage() {
     try {
       const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!anonKey) {
+        toast.error("Supabase API key is missing. Check environment variables.");
+        return;
+      }
 
       const results = await Promise.all(
         data.map(item => 
@@ -80,7 +84,7 @@ export default function IngestPage() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${anonKey}`,
               'apikey': anonKey
-            },
+            } as HeadersInit,
             body: JSON.stringify({
               Body: item.description || item.text || item.Body || "Bulk ingested need",
               From: item.contact || item.From || "ngo_bulk_ingest",
