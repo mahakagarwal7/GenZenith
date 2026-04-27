@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { OperationsMap } from "@/features/admin/OperationsMap";
 import Link from "next/link";
 
 type DashboardSnapshot = {
@@ -192,31 +194,35 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-8 lg:grid-cols-7">
-        <Card className="lg:col-span-5 yc-shadow border-slate-200 dark:border-slate-800">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2">
-                <CardTitle className="text-lg font-bold">Inbound Intelligence Stream</CardTitle>
-                {searchQuery && (
-                  <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary">
-                    FILTERED BY: {searchQuery.toUpperCase()}
-                  </Badge>
-                )}
+        <div className="lg:col-span-5 space-y-8">
+          <OperationsMap />
+          
+          <Card className="yc-shadow border-slate-200 dark:border-slate-800">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <CardTitle className="text-lg font-bold">Inbound Intelligence Stream</CardTitle>
+                  {searchQuery && (
+                    <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary">
+                      FILTERED BY: {searchQuery.toUpperCase()}
+                    </Badge>
+                  )}
+                </div>
+                <CardDescription>
+                  A real-time list of all incoming WhatsApp requests and their current status.
+                </CardDescription>
               </div>
-              <CardDescription>
-                A real-time list of all incoming WhatsApp requests and their current status.
-              </CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" className="text-xs" asChild>
-              <Link href="/diagnostics">
-                View Diagnostics <ArrowUpRight className="ml-1 h-3 w-3" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0 border-t">
-            <AdminNeedsTable searchQuery={searchQuery} />
-          </CardContent>
-        </Card>
+              <Button variant="ghost" size="sm" className="text-xs" asChild>
+                <Link href="/diagnostics">
+                  View Diagnostics <ArrowUpRight className="ml-1 h-3 w-3" />
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0 border-t">
+              <AdminNeedsTable searchQuery={searchQuery} />
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="lg:col-span-2 space-y-8">
           <Card className="yc-shadow border-slate-200 dark:border-slate-800">

@@ -1,0 +1,1 @@
+CREATE POLICY "Public can view default NGO match logs" ON public.match_logs FOR SELECT TO anon USING (EXISTS (SELECT 1 FROM public.needs WHERE public.needs.need_id = public.match_logs.need_id AND public.needs.ngo_id = 'ngo_default'));

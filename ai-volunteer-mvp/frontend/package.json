@@ -12,6 +12,7 @@
     "@base-ui/react": "^1.4.1",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-slot": "^1.2.4",
+    "@react-google-maps/api": "^2.20.8",
     "@sentry/nextjs": "^10.50.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",

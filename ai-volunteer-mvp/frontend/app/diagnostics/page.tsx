@@ -34,8 +34,7 @@ export default function DiagnosticsPage() {
     queryFn: async () => {
       const t1 = Date.now();
       const { data: edgeOk, error: edgeError } = await supabase.functions.invoke("whatsapp-webhook", {
-        method: "POST",
-        body: {}, // Dummy body to check reachability
+        method: "GET",
       });
       const edgeLatency = Date.now() - t1;
 

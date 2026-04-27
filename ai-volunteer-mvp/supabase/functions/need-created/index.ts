@@ -147,7 +147,8 @@ async function rankVolunteers(need: NeedRow): Promise<Array<{ volunteerId: strin
     if (!rpc.error && rpc.data && rpc.data.length > 0) {
       let pool = rpc.data as CandidateVolunteerRow[];
 
-      if (need.region) {
+      // Only filter by region if we have a huge pool, otherwise trust coordinates
+      if (need.region && pool.length > 5) {
         pool = pool.filter((c) => areaMatches(need.region as string, c.region ?? c.city ?? null));
       }
 

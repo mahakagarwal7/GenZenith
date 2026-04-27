@@ -1,5 +1,6 @@
 import { supabase } from '../_shared/supabase.ts';
 import { jsonResponse, methodNotAllowed, parseJsonBody } from '../_shared/http.ts';
+import { aiTriage } from '../_shared/ai.ts';
 
 type NeedRow = {
   need_id: string;
@@ -127,27 +128,7 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   general: ['help', 'need', 'assist'],
 };
 
-function extractLocationText(rawText: string): string {
-  const normalizedText = rawText.replace(/\s+/g, ' ').trim();
-  const match = normalizedText.match(/(?:\b(?:at|in|near|around)\b|\blocation\b[:\-]?)\s+([^.;\n]+)/i);
 
-  if (match?.[1]) {
-    return match[1].trim();
-  }
-
-  return normalizedText;
-}
-
-function classifyMessage(text: string): { category: string; classification: 'critical' | 'urgent' | 'normal' | 'low' } {
-  const lower = text.toLowerCase();
-  const isCritical = /\b(emergency|critical|immediately|life|bleeding)\b/i.test(lower);
-  const category = Object.entries(CATEGORY_KEYWORDS).find(([, k]) => k.some((w) => lower.includes(w)))?.[0] || 'general';
-
-  if (isCritical) return { category, classification: 'critical' };
-  if (/\b(urgent|asap|today|soon)\b/i.test(lower)) return { category, classification: 'urgent' };
-  if (/\b(next week|flexible|update|status)\b/i.test(lower)) return { category, classification: 'low' };
-  return { category, classification: 'normal' };
-}
 
 async function geocodeLocation(text: string): Promise<{ lat: number; lng: number; city?: string; region?: string } | null> {
   if (!text || text.length < 3) return null;
@@ -431,7 +412,12 @@ async function notifyVolunteer(volunteerId: string, needId: string): Promise<boo
   const body = new URLSearchParams({
     To: volunteer.data.contact_number,
     From: fromStr,
-    Body: `New need assigned: ${needId}. Reply YES to accept or NO to decline.`,
+    Body: `🚨 GENZENITH ALERT: New ${need.category.toUpperCase()} need detected!
+📍 Location: ${need.location_text || 'Near you'}
+🔥 Urgency: ${need.urgency.toUpperCase()}
+
+Reply YES to accept or NO to decline.
+Or view details: https://genzenith.in/mission/${needId}`,
   });
 
   const basicAuth = btoa(`${sid}:${token}`);
@@ -621,9 +607,8 @@ Deno.serve(async (req) => {
 
   // C. If it's a NEW REQUEST (NOT YES/NO)
   if (isTwilioForm && upperBody !== 'YES' && upperBody !== 'NO' && from) {
-    const classification = classifyMessage(bodyText);
-    const locationText = extractLocationText(bodyText);
-    const geo = await geocodeLocation(locationText);
+    const triage = await aiTriage(bodyText);
+    const geo = await geocodeLocation(triage.location_text);
     const resolvedCity = geo?.city || 'Unknown';
     const resolvedRegion = geo?.region || undefined;
     
@@ -637,12 +622,12 @@ Deno.serve(async (req) => {
         source: 'whatsapp',
         submitted_at: new Date().toISOString(),
         location_geo: toPostgisPoint(geo),
-        location_text: locationText,
-        category: classification.category,
+        location_text: triage.location_text,
+        category: triage.category,
         subcategory: 'pending',
-        urgency: classification.classification,
+        urgency: triage.urgency,
         raw_text: bodyText,
-        confidence: geo ? 1 : 0.6,
+        confidence: geo ? triage.confidence : 0.6,
         status,
         assigned_to: null,
         ngo_id: Deno.env.get('DEFAULT_NGO_ID') || 'unknown',
@@ -650,14 +635,8 @@ Deno.serve(async (req) => {
         region: resolvedRegion || null,
         metadata: {
           ingestion_source: 'master_router_whatsapp',
-          classification_result: classification,
-          geocoding_result: geo ? 'success' : 'failed',
-          geocoding_details: {
-            lat: geo?.lat || 0,
-            lng: geo?.lng || 0,
-            city: resolvedCity,
-            region: resolvedRegion || null,
-          }
+          ai_triage: triage,
+          geocoding: geo ? 'success' : 'failed'
         }
       });
 

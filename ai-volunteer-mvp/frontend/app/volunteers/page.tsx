@@ -213,7 +213,12 @@ function VolunteerCard({ volunteer }: { volunteer: Volunteer }) {
             </Badge>
           ))}
         </div>
-        <Button variant="ghost" size="sm" className="w-full text-xs text-primary font-bold">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="w-full text-xs text-primary font-bold"
+          onClick={() => toast.info(`Volunteer: ${volunteer.full_name}\nContact: ${volunteer.contact_number}\nSkills: ${volunteer.skills.join(", ")}`)}
+        >
           View Profile <ArrowUpRight className="ml-1 h-3 w-3" />
         </Button>
       </CardContent>

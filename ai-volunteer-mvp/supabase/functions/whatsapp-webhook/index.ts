@@ -1,5 +1,6 @@
 import { supabase } from '../_shared/supabase.ts';
-import { jsonResponse, methodNotAllowed, parseJsonBody } from '../_shared/http.ts';
+import { jsonResponse, methodNotAllowed, parseJsonBody, parseTwilioForm } from '../_shared/http.ts';
+import { aiTriage } from '../_shared/ai.ts';
 
 const DEFAULT_NGO_ID = Deno.env.get('DEFAULT_NGO_ID');
 const NEED_EVIDENCE_BUCKET = Deno.env.get('SUPABASE_NEED_EVIDENCE_BUCKET') || Deno.env.get('NEED_EVIDENCE_BUCKET');
@@ -213,21 +214,21 @@ async function geocodeLocation(text: string): Promise<{ lat: number; lng: number
   };
 }
 
-async function extractTextFromImage(imageUri: string): Promise<{ text: string; confidence: number }> {
-  if (!imageUri) {
+async function extractTextFromImage(imageSource: { uri?: string; content?: string }): Promise<{ text: string; confidence: number }> {
+  if (!imageSource.uri && !imageSource.content) {
     return { text: '', confidence: 0 };
   }
 
-  // 1. Try service account auth (preferred — more secure, no API key needed)
+  // 1. Try service account auth
   const accessToken = await getGoogleAccessToken();
 
-  // 2. Fall back to API key if service account not configured
+  // 2. Fall back to API key
   const apiKey = accessToken
     ? null
     : (Deno.env.get('GOOGLE_VISION_API_KEY') || Deno.env.get('GOOGLE_CLOUD_VISION_API_KEY'));
 
   if (!accessToken && !apiKey) {
-    console.warn('Google Vision: no credentials configured (set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CLOUD_VISION_API_KEY)');
+    console.warn('Google Vision: no credentials configured');
     return { text: '', confidence: 0 };
   }
 
@@ -240,13 +241,20 @@ async function extractTextFromImage(imageUri: string): Promise<{ text: string; c
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
+  const imagePayload: any = {};
+  if (imageSource.content) {
+    imagePayload.content = imageSource.content;
+  } else {
+    imagePayload.source = { imageUri: imageSource.uri };
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       requests: [
         {
-          image: { source: { imageUri } },
+          image: imagePayload,
           features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
         },
       ],
@@ -306,6 +314,11 @@ async function uploadNeedImage(needId: string, fileBuffer: Uint8Array, contentTy
 }
 
 Deno.serve(async (req) => {
+  // Handle PING / Health check
+  if (req.method === 'GET' || req.method === 'OPTIONS') {
+    return jsonResponse({ status: 'healthy', timestamp: new Date().toISOString() });
+  }
+
   if (req.method !== 'POST') {
     return methodNotAllowed();
   }
@@ -365,31 +378,35 @@ Deno.serve(async (req) => {
     let rawText = incomingText;
     let confidence = 1;
 
-    if (mediaUrl) {
-      let ocrSource = mediaUrl;
+    let imageContent: string | undefined;
 
+    if (mediaUrl) {
       if (/^https?:\/\//i.test(mediaUrl)) {
         try {
           const mediaResponse = await fetch(mediaUrl);
           if (mediaResponse.ok) {
             const buffer = new Uint8Array(await mediaResponse.arrayBuffer());
             const contentType = mediaResponse.headers.get('content-type') || 'image/jpeg';
-            ocrSource = await uploadNeedImage(needId, buffer, contentType);
+            // Store it locally
+            await uploadNeedImage(needId, buffer, contentType);
+            // Use base64 for OCR to avoid network issues with Vision API fetching local/private URLs
+            imageContent = btoa(String.fromCharCode(...buffer));
           }
-        } catch {
-          // Keep source URL fallback when storage upload fails.
+        } catch (err) {
+          console.error('Failed to process media URL:', err);
         }
       }
 
-      const ocr = await extractTextFromImage(ocrSource);
-      rawText = ocr.text;
+      const ocr = await extractTextFromImage(imageContent ? { content: imageContent } : { uri: mediaUrl });
+      rawText = ocr.text || rawText;
       confidence = ocr.confidence;
     }
 
-    const classification = classifyMessage(rawText);
-    const locationText = extractLocationText(rawText);
-    const geo = await geocodeLocation(locationText);
-    const status = !geo || confidence < 0.7 ? 'needs_validation' : 'unassigned';
+    const triage = await aiTriage(rawText);
+    const geo = await geocodeLocation(triage.location_text);
+    
+    // In local demo mode (no Gemini key), we allow matching if geocoding worked
+    const status = !geo ? 'needs_validation' : 'unassigned';
 
     const { data, error } = await supabase
       .from('needs')
@@ -398,20 +415,20 @@ Deno.serve(async (req) => {
         source: typeof body.Source === 'string' ? body.Source : 'whatsapp',
         submitted_at: new Date().toISOString(),
         location_geo: toPostgisPoint(geo),
-        location_text: locationText,
-        category: classification.category,
+        location_text: triage.location_text,
+        category: triage.category,
         subcategory: 'pending',
-        urgency: classification.classification,
+        urgency: triage.urgency,
         raw_text: rawText,
-        confidence,
+        confidence: geo ? triage.confidence : 0.6,
         status,
         assigned_to: null,
         ngo_id: DEFAULT_NGO_ID,
         contact_number: from,
         region: geo?.region || null,
         metadata: {
-          ingestion_source: 'whatsapp_webhook_ocr',
-          ocr_text: rawText,
+          ingestion_source: 'whatsapp_webhook_ai',
+          ai_triage: triage,
           ocr_confidence: confidence,
           is_image: !!mediaUrl,
           geocoding_result: geo ? 'success' : 'failed',
