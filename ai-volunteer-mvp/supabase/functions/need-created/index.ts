@@ -6,6 +6,7 @@ type NeedRow = {
   category: string;
   location_geo: unknown | null;
   status: string;
+  region?: string | null;
 };
 
 type CandidateVolunteerRow = {
@@ -16,7 +17,21 @@ type CandidateVolunteerRow = {
   typical_capacity: number;
   total_assignments: number;
   active_tasks: number;
+  city?: string | null;
+  region?: string | null;
 };
+
+function normalizeArea(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function areaMatches(targetArea: string, candidateArea: string | null | undefined): boolean {
+  if (!targetArea) return true;
+  if (!candidateArea) return false;
+  const target = normalizeArea(targetArea);
+  const candidate = normalizeArea(candidateArea);
+  return candidate.includes(target) || target.includes(candidate);
+}
 
 function parsePoint(value: unknown): { lat: number; lng: number } | null {
   if (!value) return null;
@@ -104,7 +119,7 @@ function extractNeedId(payload: Record<string, unknown>): string | null {
 async function loadNeed(needId: string): Promise<NeedRow | null> {
   const { data, error } = await supabase
     .from('needs')
-    .select('need_id, category, location_geo, status')
+    .select('need_id, category, location_geo, status, region')
     .eq('need_id', needId)
     .maybeSingle<NeedRow>();
 
@@ -116,32 +131,50 @@ async function rankVolunteers(need: NeedRow): Promise<Array<{ volunteerId: strin
   const needGeo = parsePoint(need.location_geo);
   if (!needGeo) return [];
 
-  const rpc = await supabase.rpc('match_volunteers_for_need', {
-    p_lat: needGeo.lat,
-    p_lng: needGeo.lng,
-    p_radius_meters: 10000,
-    p_category: need.category,
-    p_limit: 100,
-  });
-
+  // Strategy: Try 10km -> 100km -> Global
+  const radii = [10000, 100000, null];
   let candidates: CandidateVolunteerRow[] = [];
-  if (rpc.error) {
-    console.warn(`RPC match_volunteers_for_need failed: ${rpc.error.message}. Falling back to standard query.`);
-    const fallback = await supabase.from('volunteers').select('*').eq('status', 'available').limit(10);
-    candidates = (fallback.data ?? []) as any[];
-  } else {
-    candidates = (rpc.data ?? []) as CandidateVolunteerRow[];
+
+  for (const radius of radii) {
+    const rpc = await supabase.rpc('match_volunteers_for_need', {
+      p_lat: needGeo.lat,
+      p_lng: needGeo.lng,
+      p_radius_meters: radius,
+      p_category: need.category,
+      p_limit: 10,
+    });
+
+    if (!rpc.error && rpc.data && rpc.data.length > 0) {
+      let pool = rpc.data as CandidateVolunteerRow[];
+
+      if (need.region) {
+        pool = pool.filter((c) => areaMatches(need.region as string, c.region ?? c.city ?? null));
+      }
+
+      if (pool.length > 0) {
+        candidates = pool;
+        console.log(`Matched ${candidates.length} volunteers at radius: ${radius ?? 'Global'}`);
+        break;
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    console.warn(`No volunteers found for category ${need.category} in the required area.`);
+    return [];
   }
 
   return candidates
     .map((candidate) => {
       const volunteerGeo = parsePoint(candidate.location) || needGeo;
       const distance = haversine(needGeo.lat, needGeo.lng, volunteerGeo.lat, volunteerGeo.lng);
-      const proximity = Math.max(0, 1 - distance / 10);
+      // Normalized proximity score
+      const proximity = radius_to_score(distance);
       const skill = candidate.skills.includes(need.category) ? 1 : 0.3;
-      const availability = candidate.historical_response_rate;
-      const workload = 1 - Math.min(1, candidate.active_tasks / Math.max(candidate.typical_capacity, 1));
-      const fairness = 1 - Math.min(1, candidate.total_assignments / 50);
+      const availability = candidate.historical_response_rate || 0.8;
+      const workload = 1 - Math.min(1, (candidate.active_tasks || 0) / Math.max(candidate.typical_capacity || 1, 1));
+      const fairness = 1 - Math.min(1, (candidate.total_assignments || 0) / 50);
+
       const score = 0.25 * proximity + 0.25 * skill + 0.2 * availability + 0.15 * workload + 0.15 * fairness;
       return {
         volunteerId: candidate.id,
@@ -150,6 +183,14 @@ async function rankVolunteers(need: NeedRow): Promise<Array<{ volunteerId: strin
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
+}
+
+function radius_to_score(distanceKm: number): number {
+  if (distanceKm <= 5) return 1.0;
+  if (distanceKm <= 10) return 0.8;
+  if (distanceKm <= 50) return 0.5;
+  if (distanceKm <= 100) return 0.3;
+  return 0.1;
 }
 
 async function notifyVolunteer(volunteerId: string, needId: string): Promise<boolean> {
@@ -175,7 +216,7 @@ async function notifyVolunteer(volunteerId: string, needId: string): Promise<boo
   const whatsappFrom = Deno.env.get('TWILIO_WHATSAPP_NUMBER');
   const fromStr = isWhatsApp ? whatsappFrom : from;
 
-  if (isWhatsApp && !fromStr) {
+  if (!fromStr) {
     return false;
   }
 
@@ -223,33 +264,64 @@ Deno.serve(async (req) => {
 
     const matches = await rankVolunteers(need);
 
+    const nowIso = new Date().toISOString();
+
+    if (matches.length === 0) {
+      const updateResult = await supabase
+        .from('needs')
+        .update({
+          status: 'unassigned',
+          updated_at: nowIso,
+        })
+        .eq('need_id', needId);
+
+      if (updateResult.error) throw updateResult.error;
+
+      const logResult = await supabase.from('match_logs').insert({
+        need_id: needId,
+        volunteer_id: null,
+        match_score: null,
+        timestamp: nowIso,
+        metadata: {
+          source: 'need-created-edge-function',
+          matchedCount: 0,
+          reason: 'no_match',
+        },
+      });
+      if (logResult.error) {
+        console.warn('Failed to write no-match log:', logResult.error);
+      }
+
+      return jsonResponse({ ok: true, needId, matchedCount: 0, topVolunteerId: null }, 200);
+    }
+
     const updateResult = await supabase
       .from('needs')
       .update({
         status: 'pending_acceptance',
-        updated_at: new Date().toISOString(),
+        updated_at: nowIso,
       })
       .eq('need_id', needId);
 
     if (updateResult.error) throw updateResult.error;
 
-    const topVolunteerId = matches[0]?.volunteerId ?? null;
-
-    const logResult = await supabase.from('match_logs').insert({
+    // Log every volunteer we notify so inbound YES/NO can resolve needId reliably.
+    const matchLogRows = matches.slice(0, 3).map((item, idx) => ({
       need_id: needId,
-      volunteer_id: topVolunteerId,
-      match_score: matches[0]?.score ?? 0,
-      timestamp: new Date().toISOString(),
+      volunteer_id: item.volunteerId,
+      match_score: item.score,
+      timestamp: nowIso,
       metadata: {
         source: 'need-created-edge-function',
-        matchedCount: matches.length,
+        rank: idx + 1,
       },
-    });
-
+    }));
+    const logResult = await supabase.from('match_logs').insert(matchLogRows);
     if (logResult.error) throw logResult.error;
 
     await Promise.all(matches.slice(0, 3).map((item) => notifyVolunteer(item.volunteerId, needId)));
 
+    const topVolunteerId = matches[0]?.volunteerId ?? null;
     return jsonResponse({ ok: true, needId, matchedCount: matches.length, topVolunteerId }, 200);
   } catch (error) {
     console.error('need-created failed:', error);

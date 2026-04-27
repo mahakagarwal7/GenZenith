@@ -2,7 +2,7 @@ import { supabase } from '../_shared/supabase.ts';
 import { jsonResponse, methodNotAllowed, parseJsonBody } from '../_shared/http.ts';
 
 const DEFAULT_NGO_ID = Deno.env.get('DEFAULT_NGO_ID');
-const NEED_EVIDENCE_BUCKET = Deno.env.get('SUPABASE_NEED_EVIDENCE_BUCKET');
+const NEED_EVIDENCE_BUCKET = Deno.env.get('SUPABASE_NEED_EVIDENCE_BUCKET') || Deno.env.get('NEED_EVIDENCE_BUCKET');
 
 type TwilioConfig = {
   sid: string;
@@ -47,10 +47,11 @@ async function sendTwilioMessage(to: string, body: string): Promise<void> {
 }
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  medical: ['blood', 'doctor', 'hospital', 'medicine', 'injury', 'accident', 'bleeding'],
+  medical: ['blood', 'doctor', 'hospital', 'medicine', 'injury', 'accident', 'bleeding', 'oxygen'],
   water_supply: ['water', 'tanker', 'dry', 'dehydration', 'well', 'pipeline'],
   logistics: ['transport', 'road', 'blocked', 'delivery', 'supplies', 'vehicle'],
   food: ['food', 'ration', 'hunger', 'meal', 'grain', 'kitchen'],
+  general: ['help', 'need', 'assist'],
 };
 
 function extractLocationText(rawText: string): string {
@@ -174,7 +175,7 @@ async function getGoogleAccessToken(): Promise<string | null> {
   }
 }
 
-async function geocodeLocation(text: string): Promise<{ lat: number; lng: number } | null> {
+async function geocodeLocation(text: string): Promise<{ lat: number; lng: number; city?: string; region?: string } | null> {
   if (!text.trim()) {
     return null;
   }
@@ -196,7 +197,20 @@ async function geocodeLocation(text: string): Promise<{ lat: number; lng: number
     return null;
   }
 
-  return { lat: location.lat, lng: location.lng };
+  const components = payload?.results?.[0]?.address_components as Array<{ long_name: string; types: string[] }> | undefined;
+  const cityComp = components?.find((c) => c.types.includes('locality'))
+    || components?.find((c) => c.types.includes('administrative_area_level_2'))
+    || components?.find((c) => c.types.includes('administrative_area_level_1'));
+  const regionComp = components?.find((c) => c.types.includes('administrative_area_level_1'))
+    || components?.find((c) => c.types.includes('administrative_area_level_2'))
+    || components?.find((c) => c.types.includes('locality'));
+
+  return {
+    lat: location.lat,
+    lng: location.lng,
+    city: cityComp?.long_name,
+    region: regionComp?.long_name,
+  };
 }
 
 async function extractTextFromImage(imageUri: string): Promise<{ text: string; confidence: number }> {
@@ -311,6 +325,7 @@ Deno.serve(async (req) => {
   }
 
   const incomingText = typeof body.Body === 'string' ? body.Body : '';
+  const upperText = incomingText.trim().toUpperCase();
   const mediaUrl = typeof body.MediaUrl0 === 'string' ? body.MediaUrl0 : '';
   const from = typeof body.From === 'string' ? body.From : null;
 
@@ -322,6 +337,17 @@ Deno.serve(async (req) => {
       });
     }
     return jsonResponse({ error: 'Missing payload' }, 400);
+  }
+
+  // NEW: Ignore keywords that are handled by the volunteer-response flow
+  if (upperText === 'YES' || upperText === 'NO') {
+    // If it's a keyword, we just return an empty response and let the other function 
+    // or the falling-through logic handle it. 
+    // In a production setup, Twilio should be pointed to a router or volunteer-response directly.
+    return new Response('<Response></Response>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/xml' },
+    });
   }
 
   try {
@@ -369,7 +395,7 @@ Deno.serve(async (req) => {
       .from('needs')
       .insert({
         need_id: needId,
-        source: 'whatsapp',
+        source: typeof body.Source === 'string' ? body.Source : 'whatsapp',
         submitted_at: new Date().toISOString(),
         location_geo: toPostgisPoint(geo),
         location_text: locationText,
@@ -382,6 +408,20 @@ Deno.serve(async (req) => {
         assigned_to: null,
         ngo_id: DEFAULT_NGO_ID,
         contact_number: from,
+        region: geo?.region || null,
+        metadata: {
+          ingestion_source: 'whatsapp_webhook_ocr',
+          ocr_text: rawText,
+          ocr_confidence: confidence,
+          is_image: !!mediaUrl,
+          geocoding_result: geo ? 'success' : 'failed',
+          geocoding_details: {
+            lat: geo?.lat || 0,
+            lng: geo?.lng || 0,
+            city: geo?.city || null,
+            region: geo?.region || null,
+          },
+        }
       })
       .select('need_id')
       .single();
@@ -391,11 +431,41 @@ Deno.serve(async (req) => {
     }
 
     const responseNeedId = data?.need_id || needId;
+
+    // --- TRIGGER MATCHING PIPELINE ---
+    // In local dev, we call the next stage of the pipeline directly.
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      // Use service role key for internal call
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+      if (!supabaseUrl || !serviceRoleKey) {
+        console.error('Background matching trigger skipped: missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+      } else {
+        const functionUrl = `${supabaseUrl}/functions/v1/need-created`;
+        fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey,
+          },
+          body: JSON.stringify({ need_id: responseNeedId }),
+        }).catch(err => console.error('Background matching trigger failed:', err));
+      }
+    } catch (triggerErr) {
+      console.error('Failed to initiate matching trigger:', triggerErr);
+    }
+
     if (from) {
-      await sendTwilioMessage(
-        from,
-        `Request received. Your Need ID is ${responseNeedId}. We are matching a volunteer now. Reply YES to receive the assigned volunteer details.`,
-      );
+      try {
+        await sendTwilioMessage(
+          from,
+          `Request received. Your Need ID is ${responseNeedId}. We are matching a volunteer now. Reply YES to receive the assigned volunteer details.`,
+        );
+      } catch (twilioErr) {
+        console.error('Failed to send Twilio ack message (continuing):', twilioErr);
+      }
     }
 
     if (isTwilioForm) {
@@ -405,7 +475,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    return jsonResponse({ status: 'ok', needId: responseNeedId }, 200);
+    return jsonResponse({
+      status: 'ok',
+      needId: responseNeedId,
+      need_id: responseNeedId,
+    }, 200);
   } catch (error) {
     console.error('whatsapp-webhook failed:', error);
     if (isTwilioForm) {

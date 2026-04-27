@@ -110,7 +110,7 @@ async function loadCandidateVolunteers(needGeo: { lat: number; lng: number }, ne
 }
 
 export async function matchVolunteers(needId: string, maxDistanceKm = 10, excludedVolunteerIds: string[] = []): Promise<RankedVolunteer[]> {
-  const need = await loadNeed(needId);
+  const  need = await loadNeed(needId);
   const needGeo = parsePoint(need.location_geo);
 
   if (!needGeo) throw new Error('Location unresolved');
