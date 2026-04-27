@@ -2,7 +2,7 @@ param()
 # Load from .env or environment variables
 $SVC  = $env:SUPABASE_SERVICE_ROLE_KEY
 $ANON = $env:SUPABASE_ANON_KEY
-$BASE = $env:SUPABASE_URL -or "http://127.0.0.1:54321"
+$BASE = if ($env:SUPABASE_URL) { $env:SUPABASE_URL } else { "http://127.0.0.1:54321" }
 
 if (-not $SVC -or -not $ANON) {
     Write-Host "ERROR: SUPABASE_SERVICE_ROLE_KEY and SUPABASE_ANON_KEY environment variables not set!" -ForegroundColor Red
@@ -31,13 +31,13 @@ Head "=================================================="
 # ------------------------------------------------------------------
 Head "[1] INFRASTRUCTURE"
 try   { Invoke-RestMethod "$BASE/rest/v1/" -Headers $svcH | Out-Null; Pass "REST API (PostgREST)" }
-catch { Fail "REST API" }
+catch { Fail "REST API: $($_.Exception.Message)" }
 
 try   { $a = Invoke-RestMethod "$BASE/auth/v1/health" -Headers $fnH; Pass "Auth -- GoTrue $($a.version)" }
-catch { Fail "Auth service" }
+catch { Fail "Auth service: $($_.Exception.Message)" }
 
 try   { Invoke-RestMethod "$BASE/storage/v1/status" -Headers $svcH | Out-Null; Pass "Storage service" }
-catch { Fail "Storage service" }
+catch { Fail "Storage service: $($_.Exception.Message)" }
 
 $bkts = try { Invoke-RestMethod "$BASE/storage/v1/bucket" -Method GET -Headers $svcH } catch { @() }
 if ($bkts.name -contains "need-evidence") { Pass "Storage bucket: need-evidence" }
@@ -68,7 +68,12 @@ foreach ($t in @("needs","volunteers","match_logs","profiles","predictions")) {
 # ------------------------------------------------------------------
 Head "[4] EXTERNAL API KEYS"
 
-$ev    = Get-Content "c:\Users\SOHAM GANGOPADHYAY\OneDrive\Desktop\GenZenith\.env"
+$envFile = "c:\Users\Mahak\GenZenith\ai-volunteer-mvp\.env"
+if (-not (Test-Path $envFile)) {
+    $envFile = ".env"
+}
+
+$ev    = Get-Content $envFile
 $mapK  = ($ev | Where-Object { $_ -match "^GOOGLE_MAPS_API_KEY=" })           -replace "^GOOGLE_MAPS_API_KEY=",""
 $tSid  = ($ev | Where-Object { $_ -match "^TWILIO_ACCOUNT_SID=" })            -replace "^TWILIO_ACCOUNT_SID=",""
 $tTok  = ($ev | Where-Object { $_ -match "^TWILIO_AUTH_TOKEN=" })             -replace "^TWILIO_AUTH_TOKEN=",""
@@ -111,11 +116,17 @@ if ($saJs.Length -gt 100) {
 Head "[5] EDGE FUNCTION METHOD GUARDS"
 foreach ($fnName in @("whatsapp-webhook","need-created","volunteer-response")) {
     try {
-        Invoke-WebRequest "$BASE/functions/v1/$fnName" -Method GET -Headers $fnH -ErrorAction Stop | Out-Null
-        Fail "$fnName accepted GET (should be 405)"
+        $resp = Invoke-WebRequest "$BASE/functions/v1/$fnName" -Method GET -Headers $fnH -ErrorAction Stop
+        if ($fnName -eq "whatsapp-webhook" -and $resp.StatusCode -eq 200) {
+            Pass "$fnName GET returns 200 (Diagnostics Ping Allowed)"
+        } else {
+            Fail "$fnName accepted GET (should be 405)"
+        }
     } catch {
         if ($_.Exception.Response.StatusCode -eq "MethodNotAllowed") {
             Pass "$fnName GET returns 405"
+        } elseif ($fnName -eq "whatsapp-webhook" -and $_.Exception.Response.StatusCode -eq "OK") {
+            Pass "$fnName GET returns 200 (Diagnostics Ping Allowed)"
         } else {
             Fail "$fnName unexpected status: $($_.Exception.Response.StatusCode)"
         }
