@@ -6,7 +6,8 @@ FROM base AS deps
 WORKDIR /app
 # Copy frontend package files and install dependencies
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --omit=dev
+# Install all dependencies including dev dependencies so the build (Tailwind/PostCSS/Turbopack) succeeds
+RUN npm ci
 
 # Build the app
 FROM base AS builder
