@@ -7,12 +7,18 @@
 # Node modules
 node_modules
 **/node_modules
+frontend/node_modules
+functions/node_modules
+prediction-service/.venv
 
 # Next.js build outputs
 .next
+**/.next
+frontend/.next
 .out
 dist
 build
+frontend/.turbo
 
 # Logs and temp files
 npm-debug.log*
@@ -32,6 +38,8 @@ coverage/
 
 # Docker / CI
 docker-compose*.yml
+supabase/.temp
+supabase/.branches
 
 # OS files
 .DS_Store

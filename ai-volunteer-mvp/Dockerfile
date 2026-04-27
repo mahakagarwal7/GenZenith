@@ -15,13 +15,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 # Copy only the frontend app into the build stage
 COPY frontend/ ./
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # Production image
 FROM base AS runner
 WORKDIR /app
-ENV NODE_ENV production
+ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
@@ -31,6 +31,6 @@ COPY --from=builder /app/package.json ./package.json
 
 USER nextjs
 EXPOSE 8080
-ENV PORT 8080
+ENV PORT=8080
 
 CMD ["npm", "start"]
