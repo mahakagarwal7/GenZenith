@@ -1,9 +1,8 @@
 # Use the official Node.js image
-FROM node:20-alpine AS base
+FROM node:20-bullseye-slim AS base
 
 # Install dependencies
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 # Copy frontend package files and install dependencies
 COPY frontend/package.json frontend/package-lock.json* ./
