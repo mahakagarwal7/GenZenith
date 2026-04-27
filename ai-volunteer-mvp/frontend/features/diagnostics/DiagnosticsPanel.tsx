@@ -120,7 +120,7 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
         ENDPOINTS.volunteerResponse,
         {
           method: 'POST',
-          headers: headersObj,
+          headers: headersObj as HeadersInit,
           body: JSON.stringify({
             action: 'REMATCH',
             needId: needId,
@@ -164,7 +164,7 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
 
       const response = await fetch(functionUrl, {
         method: 'POST',
-        headers: headersObj,
+        headers: headersObj as HeadersInit,
         body: JSON.stringify({
           needId: needId,
           volunteerId: latestLog.volunteer_id,
