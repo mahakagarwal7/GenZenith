@@ -1,29 +1,14 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { GoogleMap, useJsApiLoader, MarkerF, InfoWindowF } from "@react-google-maps/api";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Card } from "@/components/ui/card";
-
-const containerStyle = {
-  width: "100%",
-  height: "500px",
-};
-
-const center = {
-  lat: 22.5726, // Kolkata
-  lng: 88.3639,
-};
+import { Badge } from "@/components/ui/badge";
+import { MapPin, Activity } from "lucide-react";
 
 export function OperationsMap() {
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-  });
-
   const supabase = createClient();
   const [needs, setNeeds] = useState<any[]>([]);
-  const [selectedNeed, setSelectedNeed] = useState<any>(null);
 
   const fetchNeeds = async () => {
     const { data } = await supabase
@@ -57,64 +42,61 @@ export function OperationsMap() {
     };
   }, []);
 
-  const markers = useMemo(() => needs, [needs]);
-
-  if (!isLoaded) return <div className="h-[500px] flex items-center justify-center bg-slate-900 rounded-xl">Loading Map...</div>;
-
   return (
     <Card className="overflow-hidden border-slate-200 dark:border-slate-800 yc-shadow">
-      <GoogleMap
-        mapContainerStyle={containerStyle}
-        center={center}
-        zoom={12}
-        options={{
-          styles: darkMapStyle,
-          disableDefaultUI: true,
-          zoomControl: true,
-        }}
-      >
-        {markers.map((need) => (
-          <MarkerF
-            key={need.need_id}
-            position={{ lat: need.lat, lng: need.lng }}
-            onClick={() => setSelectedNeed(need)}
-            icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              fillColor: need.status === 'assigned' ? '#22c55e' : '#ef4444',
-              fillOpacity: 1,
-              strokeWeight: 0,
-              scale: 8,
-            }}
-          />
-        ))}
+      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60 md:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              <MapPin className="h-4 w-4 text-rose-500" />
+              Live Operations Overview
+            </div>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Showing active needs and their latest known locations without depending on the browser map SDK.
+            </p>
+          </div>
+          <Badge variant="secondary" className="gap-1">
+            <Activity className="h-3 w-3" />
+            {needs.length} tracked
+          </Badge>
+        </div>
+      </div>
 
-        {selectedNeed && (
-          <InfoWindowF
-            position={{ lat: selectedNeed.lat, lng: selectedNeed.lng }}
-            onCloseClick={() => setSelectedNeed(null)}
-          >
-            <div className="p-2 text-slate-900 min-w-[200px]">
-              <h3 className="font-bold text-sm uppercase">{selectedNeed.category}</h3>
-              <p className="text-xs mt-1">{selectedNeed.location_text}</p>
-              <div className="mt-2 flex items-center justify-between">
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                  selectedNeed.urgency === 'critical' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
-                }`}>
-                  {selectedNeed.urgency.toUpperCase()}
-                </span>
-                <span className="text-[10px] text-slate-500">{selectedNeed.status}</span>
+      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3 md:p-6">
+        {needs.length === 0 ? (
+          <div className="col-span-full rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            No active needs with coordinates yet.
+          </div>
+        ) : (
+          needs.slice(0, 6).map((need) => (
+            <div key={need.need_id} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/60">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {need.category || "general"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {need.location_text || "Unknown location"}
+                  </p>
+                </div>
+                <Badge variant={need.status === "assigned" ? "default" : "secondary"}>
+                  {need.status}
+                </Badge>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                <div>
+                  <span className="block font-medium uppercase tracking-wide text-slate-400">Lat</span>
+                  <span>{need.lat?.toFixed?.(4) ?? "-"}</span>
+                </div>
+                <div>
+                  <span className="block font-medium uppercase tracking-wide text-slate-400">Lng</span>
+                  <span>{need.lng?.toFixed?.(4) ?? "-"}</span>
+                </div>
               </div>
             </div>
-          </InfoWindowF>
+          ))
         )}
-      </GoogleMap>
+      </div>
     </Card>
   );
 }
-
-const darkMapStyle = [
-  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-  // ... more styles for a premium dark look
-];
