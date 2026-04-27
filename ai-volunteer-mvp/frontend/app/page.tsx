@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
@@ -44,13 +46,21 @@ type DashboardSnapshot = {
   updatedAt: string;
 };
 
-import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 
 export default function Dashboard() {
   const supabase = createClient();
   const queryClient = useQueryClient();
-  const searchParams = useSearchParams();
-  const searchQuery = searchParams.get("search") || "";
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      setSearchQuery(params.get("search") || "");
+    } catch (e) {
+      setSearchQuery("");
+    }
+  }, []);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["dashboard-snapshot"] });

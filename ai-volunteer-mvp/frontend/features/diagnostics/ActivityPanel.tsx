@@ -57,12 +57,12 @@ export function ActivityPanel() {
 
   useEffect(() => {
     setLiveLogs(
-      (initialLogs ?? []).map((log, index) => ({
+        (initialLogs ?? []).map((log, index) => ({
         id: `${log.need_id}-${log.volunteer_id}-${index}`,
         timestamp: new Date(log.timestamp).toLocaleTimeString(),
         type: log.metadata?.type === "delivery" ? "delivery" : log.metadata?.type === "webhook" ? "webhook" : "processing",
         status: log.metadata?.status === "error" ? "error" : "success",
-        title: log.metadata?.title || `Match log for ${log.need_id}`,
+        title: String(log.metadata?.title ?? `Match log for ${log.need_id}`),
         payload: log.metadata ?? { need_id: log.need_id, volunteer_id: log.volunteer_id, match_score: log.match_score },
       }))
     );
@@ -82,7 +82,7 @@ export function ActivityPanel() {
               timestamp: new Date(row.timestamp).toLocaleTimeString(),
               type: row.metadata?.type === "delivery" ? "delivery" : row.metadata?.type === "webhook" ? "webhook" : "processing",
               status: row.metadata?.status === "error" ? "error" : "success",
-              title: row.metadata?.title || `Match log for ${row.need_id}`,
+              title: String(row.metadata?.title ?? `Match log for ${row.need_id}`),
               payload: row.metadata ?? { need_id: row.need_id, volunteer_id: row.volunteer_id, match_score: row.match_score },
             },
             ...current,

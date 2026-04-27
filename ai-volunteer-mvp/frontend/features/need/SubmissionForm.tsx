@@ -136,7 +136,7 @@ export function SubmissionForm() {
       
       // Auto-redirect to status page after a brief delay
       setTimeout(() => {
-        router.push(`/status/${result.need_id || result.needId}`);
+        router.push(`/status/${result.need_id}`);
       }, 3000);
     } catch (error: any) {
       console.error("Submission failed:", error);

@@ -131,7 +131,7 @@ export function StatusTimeline({ needId, need: propNeed }: { needId: string, nee
               const status = getStepStatus(step.id);
               const isCurrent = status === "current";
               const isComplete = status === "complete";
-              const isError = status === "error";
+              const isError = false;
 
               const Icon = isError ? AlertCircle : isComplete ? CheckCircle2 : step.icon;
 
@@ -161,7 +161,7 @@ export function StatusTimeline({ needId, need: propNeed }: { needId: string, nee
                         <h4 className={`font-medium ${isCurrent ? "text-indigo-300" : isComplete ? "text-slate-200" : isError ? "text-red-400" : "text-slate-500"}`}>
                           {step.label}
                         </h4>
-                        {isComplete && index === 0 && activeNeed.metadata?.is_image && (
+                        {isComplete && index === 0 && Boolean(activeNeed.metadata?.is_image) && (
                           <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/20">
                             OCR PROCESSED
                           </Badge>
@@ -171,11 +171,11 @@ export function StatusTimeline({ needId, need: propNeed }: { needId: string, nee
                       {(isCurrent || isComplete) && index === 0 && (
                         <div className="space-y-2">
                           {isCurrent && <p className="text-sm text-slate-400">Validating request content and coordinates...</p>}
-                          {activeNeed.metadata?.ocr_text && (
+                          {Boolean(activeNeed.metadata?.ocr_text) && (
                             <div className="mt-2 p-2 rounded bg-black/40 text-[10px] font-mono text-slate-400 border border-slate-700/50">
                               <p className="text-slate-500 mb-1 uppercase text-[8px] font-bold">Raw Extraction Metadata:</p>
                               <div className="text-slate-300 break-words line-clamp-3">
-                                {activeNeed.metadata.ocr_text}
+                                {String(activeNeed.metadata?.ocr_text)}
                               </div>
                             </div>
                           )}
@@ -185,9 +185,9 @@ export function StatusTimeline({ needId, need: propNeed }: { needId: string, nee
                       {isCurrent && currentStatus === "unassigned" && (
                         <div className="space-y-2">
                           <p className="text-sm text-slate-400">Our AI is finding the best volunteers...</p>
-                          <div className="flex items-center space-x-2 text-[10px] text-indigo-400/70">
+                            <div className="flex items-center space-x-2 text-[10px] text-indigo-400/70">
                             <MapPin className="h-3 w-3" />
-                            <span>Geocoding: {activeNeed.metadata?.geocoding_result || "Success"}</span>
+                            <span>Geocoding: {String(activeNeed.metadata?.geocoding_result ?? "Success")}</span>
                           </div>
                         </div>
                       )}

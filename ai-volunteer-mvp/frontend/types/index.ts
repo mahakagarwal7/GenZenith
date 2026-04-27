@@ -6,8 +6,10 @@ export const NeedStatusSchema = z.enum([
   "needs_validation",
   "unassigned",
   "pending_acceptance",
+  "no_volunteers",
   "assigned",
   "completed",
+  "failed",
 ]);
 
 export const NeedSchema = z.object({
@@ -22,6 +24,7 @@ export const NeedSchema = z.object({
   raw_text: z.string(),
   confidence: z.number(),
   status: NeedStatusSchema,
+  metadata: z.record(z.string(), z.any()).nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
   ngo_id: z.string().nullable().optional(),
   contact_number: z.string(),
@@ -49,7 +52,7 @@ export const MatchLogSchema = z.object({
   volunteer_id: z.string().uuid(),
   match_score: z.number(),
   timestamp: z.string().datetime(),
-  metadata: z.record(z.any()).nullable().optional(),
+  metadata: z.record(z.string(), z.any()).nullable().optional(),
 });
 
 export type MatchLog = z.infer<typeof MatchLogSchema>;

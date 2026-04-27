@@ -73,13 +73,13 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
       const [latestNeedResult, latestLogResult] = await Promise.all([
         needId
           ? supabase
-              .from("needs")
-              .select("need_id, status, location_text, submitted_at, raw_text, assigned_to")
-              .eq("need_id", needId)
-              .maybeSingle()
+            .from("needs")
+            .select("need_id, status, location_text, submitted_at, raw_text, assigned_to, metadata")
+            .eq("need_id", needId)
+            .maybeSingle()
           : supabase
-              .from("needs")
-              .select("need_id, status, location_text, submitted_at, raw_text, assigned_to")
+            .from("needs")
+            .select("need_id, status, location_text, submitted_at, raw_text, assigned_to, metadata")
               .order("submitted_at", { ascending: false })
               .limit(1)
               .maybeSingle(),
@@ -110,15 +110,17 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
         throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
       }
 
+      const headersObj: Record<string,string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anonKey}`,
+        apikey: anonKey,
+      };
+
       const result = await fetchWithRetry<{ matched: boolean; volunteerId?: string; message?: string }>(
         ENDPOINTS.volunteerResponse,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${anonKey}`,
-            apikey: anonKey,
-          },
+          headers: headersObj,
           body: JSON.stringify({
             action: 'REMATCH',
             needId: needId,
@@ -153,13 +155,16 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
       const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/volunteer-response`;
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+      if (!anonKey) throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY');
+      const headersObj: Record<string,string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${anonKey}`,
+        'apikey': anonKey,
+      };
+
       const response = await fetch(functionUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${anonKey}`,
-          'apikey': anonKey
-        },
+        headers: headersObj,
         body: JSON.stringify({
           needId: needId,
           volunteerId: latestLog.volunteer_id,

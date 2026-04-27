@@ -117,7 +117,7 @@ export function AdminNeedsTable({ searchQuery }: { searchQuery?: string }) {
                     <Badge variant="outline" className="text-[10px] h-4 px-1 uppercase font-bold tracking-wider opacity-70">
                       {need.status.replace("_", " ")}
                     </Badge>
-                    {need.metadata?.is_image && (
+                    {Boolean(need.metadata?.is_image) && (
                       <Badge variant="secondary" className="text-[9px] h-4 px-1 bg-amber-500/10 text-amber-500 border-amber-500/20">
                         OCR
                       </Badge>
