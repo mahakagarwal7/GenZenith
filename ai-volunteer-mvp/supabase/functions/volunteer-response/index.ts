@@ -494,6 +494,8 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
+    return methodNotAllowed();
+  }
 
   const contentType = req.headers.get('content-type') ?? '';
   let payload: Record<string, unknown> = {};
