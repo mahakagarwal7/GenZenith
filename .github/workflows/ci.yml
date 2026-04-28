@@ -12,20 +12,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install dependencies and build frontend
-        working-directory: ./ai-volunteer-mvp/frontend
-        run: |
-          npm ci
-          npm run build
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: ai-volunteer-mvp/frontend/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('ai-volunteer-mvp/frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
-      - name: Verify production start (optional)
-        if: always()
+      - name: Install dependencies (frontend)
+        working-directory: ./ai-volunteer-mvp/frontend
+        run: npm ci --no-audit --prefer-offline --no-progress
+
+      - name: Build frontend (capture logs)
         working-directory: ./ai-volunteer-mvp/frontend
         run: |
-          echo "Build completed for $GITHUB_REF"
+          set -o pipefail
+          npm run build 2>&1 | tee build.log
+
+      - name: Upload frontend build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-log
+          path: ./ai-volunteer-mvp/frontend/build.log
