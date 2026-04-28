@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Activity, RefreshCw, ServerCrash } from "lucide-react";
 import { fetchWithRetry } from "@/lib/api/client";
-import { ENDPOINTS } from "@/lib/api/endpoints";
+import { ENDPOINTS, env } from "@/lib/api/endpoints";
 import { toast } from "sonner";
 
 export default function MonitorPage() {
@@ -15,18 +15,13 @@ export default function MonitorPage() {
   const testWebhook = async () => {
     setIsPinging(true);
     try {
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) {
-        throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
-      }
-
       // Sending a diagnostic ping payload
       await fetchWithRetry(ENDPOINTS.whatsappWebhook, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${anonKey}`,
-          apikey: anonKey,
+          Authorization: `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ type: "diagnostic_ping", text: "Ping" }),
         retries: 0,

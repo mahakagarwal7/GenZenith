@@ -11,29 +11,14 @@ const envSchema = z.object({
  * Fails fast with a clear error message if any are missing or invalid.
  */
 export function validateEnv() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  
-  // Default API base to Supabase Edge Functions if not provided
-  const defaultApiBase = supabaseUrl ? `${supabaseUrl}/functions/v1` : "";
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE || defaultApiBase;
-
   const result = envSchema.safeParse({
-    NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
-    NEXT_PUBLIC_API_BASE: apiBase,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE,
   });
 
   if (!result.success) {
     console.error("❌ Invalid environment variables:", result.error.format());
-    // In production, we might want to fail silently or show a UI warning instead of crashing
-    if (process.env.NODE_ENV === "production") {
-       return {
-         NEXT_PUBLIC_SUPABASE_URL: supabaseUrl || "",
-         NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey || "",
-         NEXT_PUBLIC_API_BASE: apiBase || "",
-       };
-    }
     throw new Error("Invalid environment configuration. Check your .env file.");
   }
 

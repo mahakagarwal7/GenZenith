@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/card";
 import { toast } from "sonner";
 import { fetchWithRetry } from "@/lib/api/client";
-import { ENDPOINTS } from "@/lib/api/endpoints";
+import { ENDPOINTS, env } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -116,17 +116,12 @@ export function SubmissionForm() {
         From: data.contact_number,
       };
 
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) {
-        throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
-      }
-
       const result = await fetchWithRetry<{ need_id: string }>(ENDPOINTS.whatsappWebhook, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${anonKey}`,
-          apikey: anonKey,
+          Authorization: `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+          apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
         } as HeadersInit,
         body: JSON.stringify(payload),
       });
@@ -247,6 +242,7 @@ export function SubmissionForm() {
                     </span>
                     <span>Live GPS Active</span>
                     <button 
+                      type="button"
                       onClick={() => setLocationMethod('manual')}
                       className="ml-2 underline opacity-50 hover:opacity-100"
                     >

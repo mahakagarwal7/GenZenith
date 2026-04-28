@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { fetchWithRetry } from "@/lib/api/client";
-import { ENDPOINTS } from "@/lib/api/endpoints";
+import { ENDPOINTS, env } from "@/lib/api/endpoints";
 import { toast } from "sonner";
 import { 
   Database, 
@@ -105,15 +105,10 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
     setIsSimulating(true);
     
     try {
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) {
-        throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
-      }
-
       const headersObj: Record<string,string> = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${anonKey}`,
-        apikey: anonKey,
+        Authorization: `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       };
 
       const result = await fetchWithRetry<{ matched: boolean; volunteerId?: string; message?: string }>(
@@ -152,14 +147,11 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
 
     setIsSimulating(true);
     try {
-      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/volunteer-response`;
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-      if (!anonKey) throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY');
+      const functionUrl = ENDPOINTS.volunteerResponse;
       const headersObj: Record<string,string> = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${anonKey}`,
-        'apikey': anonKey,
+        'Authorization': `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+        'apikey': env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       };
 
       const response = await fetch(functionUrl, {

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { ENDPOINTS, env } from "@/lib/api/endpoints";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function IngestPage() {
@@ -69,21 +70,14 @@ export default function IngestPage() {
     setIsUploading(true);
 
     try {
-      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
-      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!anonKey) {
-        toast.error("Supabase API key is missing. Check environment variables.");
-        return;
-      }
-
       const results = await Promise.all(
         data.map(item => 
-          fetch(functionUrl, {
+          fetch(ENDPOINTS.whatsappWebhook, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${anonKey}`,
-              'apikey': anonKey
+              'Authorization': `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+              'apikey': env.NEXT_PUBLIC_SUPABASE_ANON_KEY
             } as HeadersInit,
             body: JSON.stringify({
               Body: item.description || item.text || item.Body || "Bulk ingested need",
