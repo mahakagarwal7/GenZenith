@@ -3,7 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  NEXT_PUBLIC_API_BASE: z.string().url(),
+  NEXT_PUBLIC_API_BASE: z.string().url().optional(),
 });
 
 /**
@@ -11,18 +11,27 @@ const envSchema = z.object({
  * Fails fast with a clear error message if any are missing or invalid.
  */
 export function validateEnv() {
-  const result = envSchema.safeParse({
+  const raw = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_API_BASE: process.env.NEXT_PUBLIC_API_BASE,
-  });
+  };
+
+  const result = envSchema.safeParse(raw);
 
   if (!result.success) {
     console.error("❌ Invalid environment variables:", result.error.format());
     throw new Error("Invalid environment configuration. Check your .env file.");
   }
 
-  return result.data;
+  // If NEXT_PUBLIC_API_BASE is not provided, derive it from SUPABASE_URL
+  const data = result.data;
+  if (!data.NEXT_PUBLIC_API_BASE) {
+    const base = data.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/g, "");
+    data.NEXT_PUBLIC_API_BASE = `${base}/functions/v1`;
+  }
+
+  return data;
 }
 
 const validatedEnv = validateEnv();
