@@ -74,11 +74,13 @@ export default function VolunteersPage() {
 
     try {
       const { error } = await supabase.from("volunteers").insert([{
+        id: crypto.randomUUID(),
         full_name: newVolunteer.full_name,
         city: newVolunteer.city,
         contact_number: newVolunteer.contact_number,
         skills: newVolunteer.skills.split(",").map(s => s.trim()).filter(Boolean),
         status: "available",
+        ngo_id: "ngo_default",
         historical_response_rate: 1.0,
         typical_capacity: 5,
         total_assignments: 0,
