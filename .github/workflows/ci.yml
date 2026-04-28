@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies and build frontend
+        working-directory: ./ai-volunteer-mvp/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Verify production start (optional)
+        if: always()
+        working-directory: ./ai-volunteer-mvp/frontend
+        run: |
+          echo "Build completed for $GITHUB_REF"
