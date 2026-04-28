@@ -4,10 +4,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion } from "framer-motion";
-import { 
-  Send, 
-  MapPin, 
-  MessageSquare, 
+import {
+  Send,
+  MapPin,
+  MessageSquare,
   Phone,
   Loader2,
   CheckCircle
@@ -16,17 +16,17 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardFooter, 
-  CardHeader, 
-  CardTitle 
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
 } from "@/components/ui/card";
 import { toast } from "sonner";
 import { fetchWithRetry } from "@/lib/api/client";
-import { ENDPOINTS, env } from "@/lib/api/endpoints";
+import { ENDPOINTS } from "@/lib/api/endpoints";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -69,7 +69,7 @@ export function SubmissionForm() {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        
+
         try {
           // Attempt reverse geocoding
           const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -116,22 +116,27 @@ export function SubmissionForm() {
         From: data.contact_number,
       };
 
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!anonKey) {
+        throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+      }
+
       const result = await fetchWithRetry<{ need_id: string }>(ENDPOINTS.whatsappWebhook, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-          apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        } as HeadersInit,
+          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
+        },
         body: JSON.stringify(payload),
       });
 
       setIsSuccess(true);
       toast.success("Need submitted successfully!");
-      
+
       // Auto-redirect to status page after a brief delay
       setTimeout(() => {
-        router.push(`/status/${result.need_id}`);
+        router.push(`/status/${result.need_id || result.needId}`);
       }, 3000);
     } catch (error: any) {
       console.error("Submission failed:", error);
@@ -231,7 +236,7 @@ export function SubmissionForm() {
                   </button>
                 </div>
                 {locationMethod === 'gps' && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, x: -5 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="flex items-center space-x-1.5 text-[10px] font-bold text-green-500 uppercase tracking-widest mt-1"
@@ -241,8 +246,7 @@ export function SubmissionForm() {
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                     </span>
                     <span>Live GPS Active</span>
-                    <button 
-                      type="button"
+                    <button
                       onClick={() => setLocationMethod('manual')}
                       className="ml-2 underline opacity-50 hover:opacity-100"
                     >
@@ -271,8 +275,8 @@ export function SubmissionForm() {
             </div>
           </CardContent>
           <CardFooter>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full h-11 text-base font-semibold transition-all"
               disabled={isSubmitting || isSuccess}
             >

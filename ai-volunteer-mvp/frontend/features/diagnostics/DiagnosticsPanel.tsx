@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { fetchWithRetry } from "@/lib/api/client";
-import { ENDPOINTS, env } from "@/lib/api/endpoints";
+import { ENDPOINTS } from "@/lib/api/endpoints";
 import { toast } from "sonner";
-import { 
-  Database, 
+import {
+  Database,
   FileSearch,
   CheckCircle,
   ShieldAlert,
@@ -16,13 +16,13 @@ import {
   MapPin
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Card, 
-  CardContent, 
-  CardHeader, 
+import {
+  Card,
+  CardContent,
+  CardHeader,
   CardTitle,
   CardDescription,
-  CardFooter 
+  CardFooter
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,13 +36,13 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
 
   const handleReset = async () => {
     if (!needId) return;
-    
+
     try {
       // 1. Reset the need in the DB
       const { error: needError } = await supabase
         .from('needs')
-        .update({ 
-          status: 'unassigned', 
+        .update({
+          status: 'unassigned',
           assigned_to: null,
           updated_at: new Date().toISOString()
         })
@@ -80,9 +80,9 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
           : supabase
             .from("needs")
             .select("need_id, status, location_text, submitted_at, raw_text, assigned_to, metadata")
-              .order("submitted_at", { ascending: false })
-              .limit(1)
-              .maybeSingle(),
+            .order("submitted_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
         supabase
           .from("match_logs")
           .select("need_id, volunteer_id, match_score, timestamp, metadata")
@@ -103,19 +103,24 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
   const handleRematch = async () => {
     if (!needId) return;
     setIsSimulating(true);
-    
+
     try {
-      const headersObj: Record<string,string> = {
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!anonKey) {
+        throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY");
+      }
+
+      const headersObj: Record<string, string> = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        apikey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${anonKey}`,
+        apikey: anonKey,
       };
 
       const result = await fetchWithRetry<{ matched: boolean; volunteerId?: string; message?: string }>(
         ENDPOINTS.volunteerResponse,
         {
           method: 'POST',
-          headers: headersObj as HeadersInit,
+          headers: headersObj,
           body: JSON.stringify({
             action: 'REMATCH',
             needId: needId,
@@ -127,7 +132,7 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
       } else {
         toast.info(result.message || "No local volunteers found.");
       }
-      
+
       queryClient.invalidateQueries({ queryKey: ['need', needId] });
       queryClient.invalidateQueries({ queryKey: ['needs-list'] });
     } catch (error: any) {
@@ -147,16 +152,19 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
 
     setIsSimulating(true);
     try {
-      const functionUrl = ENDPOINTS.volunteerResponse;
-      const headersObj: Record<string,string> = {
+      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/volunteer-response`;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (!anonKey) throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY');
+      const headersObj: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-        'apikey': env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${anonKey}`,
+        'apikey': anonKey,
       };
 
       const response = await fetch(functionUrl, {
         method: 'POST',
-        headers: headersObj as HeadersInit,
+        headers: headersObj,
         body: JSON.stringify({
           needId: needId,
           volunteerId: latestLog.volunteer_id,
@@ -216,18 +224,18 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
           </div>
           {needId && (
             <div className="flex items-center gap-2">
-              <Button 
+              <Button
                 variant="outline"
-                size="sm" 
-                onClick={handleReset} 
+                size="sm"
+                onClick={handleReset}
                 className="font-bold h-8 text-[10px] uppercase tracking-wider"
               >
                 Reset Match
               </Button>
               {latestNeed?.status === 'unassigned' && (
-                <Button 
-                  size="sm" 
-                  onClick={handleRematch} 
+                <Button
+                  size="sm"
+                  onClick={handleRematch}
                   disabled={isSimulating}
                   className="bg-indigo-500 hover:bg-indigo-600 font-bold h-8 text-[10px] uppercase tracking-wider"
                 >
@@ -242,9 +250,9 @@ export function DiagnosticsPanel({ needId }: { needId?: string }) {
                 </Button>
               )}
               {latestNeed?.status !== 'assigned' && latestNeed?.status !== 'unassigned' && (
-                <Button 
-                  size="sm" 
-                  onClick={simulateResponse} 
+                <Button
+                  size="sm"
+                  onClick={simulateResponse}
                   disabled={isSimulating}
                   className="bg-indigo-500 hover:bg-indigo-600 font-bold h-8 text-[10px] uppercase tracking-wider"
                 >

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { 
-  Upload, 
-  Database, 
-  ShieldCheck, 
-  AlertCircle, 
-  FileJson, 
+import {
+  Upload,
+  Database,
+  ShieldCheck,
+  AlertCircle,
+  FileJson,
   FileSpreadsheet,
   CheckCircle2,
   Loader2,
@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import { ENDPOINTS, env } from "@/lib/api/endpoints";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function IngestPage() {
@@ -49,7 +48,7 @@ export default function IngestPage() {
             }, {} as any);
           });
         }
-        
+
         if (Array.isArray(parsed)) {
           setData(parsed);
           toast.success(`Loaded ${parsed.length} records`);
@@ -70,15 +69,18 @@ export default function IngestPage() {
     setIsUploading(true);
 
     try {
+      const functionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/whatsapp-webhook`;
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
       const results = await Promise.all(
-        data.map(item => 
-          fetch(ENDPOINTS.whatsappWebhook, {
+        data.map(item =>
+          fetch(functionUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-              'apikey': env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-            } as HeadersInit,
+              'Authorization': `Bearer ${anonKey}`,
+              'apikey': anonKey
+            },
             body: JSON.stringify({
               Body: item.description || item.text || item.Body || "Bulk ingested need",
               From: item.contact || item.From || "ngo_bulk_ingest",
@@ -132,9 +134,9 @@ export default function IngestPage() {
             </div>
             <div className="w-full pt-4">
               <label className="cursor-pointer">
-                <Input 
-                  type="file" 
-                  className="hidden" 
+                <Input
+                  type="file"
+                  className="hidden"
                   accept=".csv,.json"
                   onChange={handleFileUpload}
                 />
@@ -160,9 +162,9 @@ export default function IngestPage() {
                   {data.length} records detected. Review before finalizing.
                 </CardDescription>
               </div>
-              <Button 
-                variant="destructive" 
-                size="sm" 
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={() => setData([])}
                 disabled={data.length === 0}
               >
@@ -180,7 +182,7 @@ export default function IngestPage() {
                   ) : (
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                       {data.slice(0, 10).map((row, i) => (
-                        <motion.div 
+                        <motion.div
                           key={i}
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
@@ -207,8 +209,8 @@ export default function IngestPage() {
               </div>
             </CardContent>
             <CardFooter className="border-t pt-4 bg-slate-50/50 dark:bg-slate-900/50">
-              <Button 
-                className="w-full h-11 font-bold" 
+              <Button
+                className="w-full h-11 font-bold"
                 disabled={data.length === 0 || isUploading}
                 onClick={submitToSupabase}
               >
@@ -238,7 +240,7 @@ export default function IngestPage() {
           <div className="space-y-1">
             <h4 className="font-bold text-lg">System-Wide Impact</h4>
             <p className="text-sm text-white/80 max-w-xl leading-relaxed">
-              Ingesting data here triggers the intelligent matching service instantly. 
+              Ingesting data here triggers the intelligent matching service instantly.
               Ensure geocoding fields (City, Landmark) are accurate for precise volunteer routing.
             </p>
           </div>
