@@ -40,21 +40,65 @@ export function OperationsMap() {
       }
 
       if (data) {
-        setNeeds(
-          data
-            .map((need) => {
-              const match = need.location_geo?.match(/POINT\(([-0-9.]+)\s+([-0-9.]+)\)/i);
-              const lat = match ? parseFloat(match[2]) : Number.NaN;
-              const lng = match ? parseFloat(match[1]) : Number.NaN;
+            const parsed = data
+              .map((need) => {
+                // parse geography value which can be: EWKT string 'SRID=4326;POINT(lon lat)'
+                // or WKB hex string, or object with { lat, lng } or { type: 'Point', coordinates: [lng, lat] }
+                let lat = Number.NaN;
+                let lng = Number.NaN;
 
-              return {
-                ...need,
-                lat,
-                lng,
-              };
-            })
-            .filter((need) => Number.isFinite(need.lat) && Number.isFinite(need.lng))
-        );
+                const val = need.location_geo as any;
+
+                if (val && typeof val === 'object') {
+                  if (typeof val.lat === 'number' && typeof val.lng === 'number') {
+                    lat = val.lat;
+                    lng = val.lng;
+                  } else if (Array.isArray(val.coordinates) && val.coordinates.length >= 2) {
+                    lng = Number(val.coordinates[0]);
+                    lat = Number(val.coordinates[1]);
+                  } else if (val.x !== undefined && val.y !== undefined) {
+                    lng = Number(val.x);
+                    lat = Number(val.y);
+                  }
+                } else if (typeof val === 'string') {
+                  // EWKT: SRID=4326;POINT(lon lat)
+                  const ewktMatch = val.match(/POINT\(([-0-9.]+)\s+([-0-9.]+)\)/i);
+                  if (ewktMatch) {
+                    lng = parseFloat(ewktMatch[1]);
+                    lat = parseFloat(ewktMatch[2]);
+                  } else if (/^[0-9a-fA-F]+$/.test(val) && val.length >= 42) {
+                    // Try parse EWKB hex
+                    try {
+                      const bytes = new Uint8Array(val.length / 2);
+                      for (let i = 0; i < val.length; i += 2) {
+                        bytes[i / 2] = Number.parseInt(val.slice(i, i + 2), 16);
+                      }
+                      const view = new DataView(bytes.buffer);
+                      const littleEndian = view.getUint8(0) === 1;
+                      const geomType = view.getUint32(1, littleEndian);
+                      const hasSrid = (geomType & 0x20000000) !== 0;
+                      const baseType = geomType & 0x000000ff;
+                      if (baseType === 1) {
+                        let offset = 5;
+                        if (hasSrid) offset += 4;
+                        lng = view.getFloat64(offset, littleEndian);
+                        lat = view.getFloat64(offset + 8, littleEndian);
+                      }
+                    } catch (e) {
+                      // ignore parse error
+                    }
+                  }
+                }
+
+                return {
+                  ...need,
+                  lat,
+                  lng,
+                };
+              })
+              .filter((need) => Number.isFinite(need.lat) && Number.isFinite(need.lng));
+
+            setNeeds(parsed);
       }
     } catch (err) {
       console.error("OperationsMap unexpected error fetching needs:", err);

@@ -6,10 +6,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_API_BASE: z.string().url().optional(),
 });
 
-/**
- * Validates environment variables at runtime.
- * Fails fast with a clear error message if any are missing or invalid.
- */
+
 export function validateEnv() {
   const raw = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

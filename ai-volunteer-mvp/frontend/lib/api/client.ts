@@ -34,13 +34,7 @@ async function readBodySnippet(response: Response, maxLen = 500): Promise<string
   }
 }
 
-/**
- * Production-grade fetch wrapper with:
- * - Exponential backoff
- * - AbortController timeout
- * - Typed error handling
- * - Automatic toast notifications for critical failures
- */
+
 export async function fetchWithRetry<T>(
   url: string,
   options: FetchOptions = {}
@@ -116,7 +110,7 @@ export async function fetchWithRetry<T>(
         throw new Error("Request timed out. Please check your connection.");
       }
 
-      // Don't retry client errors (4xx) except maybe 429
+      
       if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 429) {
         throw error;
       }
