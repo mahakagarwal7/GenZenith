@@ -1,0 +1,12 @@
+{
+  "name": "genzenith-root",
+  "private": true,
+  "scripts": {
+    "build": "cd ai-volunteer-mvp/frontend && npm ci && npm run build",
+    "start": "cd ai-volunteer-mvp/frontend && npm run start",
+    "vercel-build": "npm run build"
+  },
+  "engines": {
+    "node": "20"
+  }
+}
