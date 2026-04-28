@@ -241,6 +241,10 @@ async function notifyVolunteer(volunteerId: string, needId: string): Promise<boo
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'GET' || req.method === 'OPTIONS') {
+    return jsonResponse({ status: 'healthy', timestamp: new Date().toISOString() });
+  }
+
   if (req.method !== 'POST') {
     return methodNotAllowed();
   }

@@ -88,6 +88,10 @@ function isAuthorized(req: Request): boolean {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'GET' || req.method === 'OPTIONS') {
+    return jsonResponse({ status: 'healthy', timestamp: new Date().toISOString() });
+  }
+
   if (req.method !== 'POST') return methodNotAllowed();
 
   if (!isAuthorized(req)) {

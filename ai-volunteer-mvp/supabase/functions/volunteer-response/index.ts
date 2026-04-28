@@ -489,9 +489,11 @@ function formatVolunteerSummary(volunteer: VolunteerInfo): string {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') {
-    return methodNotAllowed();
+  if (req.method === 'GET' || req.method === 'OPTIONS') {
+    return jsonResponse({ status: 'healthy', timestamp: new Date().toISOString() });
   }
+
+  if (req.method !== 'POST') {
 
   const contentType = req.headers.get('content-type') ?? '';
   let payload: Record<string, unknown> = {};
