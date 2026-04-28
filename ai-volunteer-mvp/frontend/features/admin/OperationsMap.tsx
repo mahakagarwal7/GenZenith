@@ -25,28 +25,40 @@ export function OperationsMap() {
   const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   const fetchNeeds = async () => {
-    const { data } = await supabase
-      .from("needs")
-      .select("need_id, category, status, location_text, location_geo")
-      .not("location_geo", "is", null)
-      .in("status", ["unassigned", "pending_acceptance", "assigned"]);
+    try {
+      const { data, error } = await supabase
+        .from("needs")
+        .select("need_id, category, status, location_text, location_geo")
+        .not("location_geo", "is", null)
+        // include `needs_validation` so partially-processed needs show on the map
+        .in("status", ["needs_validation", "unassigned", "pending_acceptance", "assigned"]);
 
-    if (data) {
-      setNeeds(
-        data
-          .map((need) => {
-            const match = need.location_geo?.match(/POINT\(([-0-9.]+)\s+([-0-9.]+)\)/i);
-            const lat = match ? parseFloat(match[2]) : Number.NaN;
-            const lng = match ? parseFloat(match[1]) : Number.NaN;
+      if (error) {
+        console.error("OperationsMap: failed to fetch needs:", error);
+        setNeeds([]);
+        return;
+      }
 
-            return {
-              ...need,
-              lat,
-              lng,
-            };
-          })
-          .filter((need) => Number.isFinite(need.lat) && Number.isFinite(need.lng))
-      );
+      if (data) {
+        setNeeds(
+          data
+            .map((need) => {
+              const match = need.location_geo?.match(/POINT\(([-0-9.]+)\s+([-0-9.]+)\)/i);
+              const lat = match ? parseFloat(match[2]) : Number.NaN;
+              const lng = match ? parseFloat(match[1]) : Number.NaN;
+
+              return {
+                ...need,
+                lat,
+                lng,
+              };
+            })
+            .filter((need) => Number.isFinite(need.lat) && Number.isFinite(need.lng))
+        );
+      }
+    } catch (err) {
+      console.error("OperationsMap unexpected error fetching needs:", err);
+      setNeeds([]);
     }
   };
 
