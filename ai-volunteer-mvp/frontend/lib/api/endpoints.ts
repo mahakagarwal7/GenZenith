@@ -36,9 +36,3 @@ export const ENDPOINTS = {
   volunteerResponse: `${env.NEXT_PUBLIC_API_BASE}/volunteer-response`,
   needCreated: `${env.NEXT_PUBLIC_API_BASE}/need-created`,
 } as const;
-
-export const ENDPOINTS = {
-  whatsappWebhook: `${env.NEXT_PUBLIC_API_BASE}/whatsapp-webhook`,
-  volunteerResponse: `${env.NEXT_PUBLIC_API_BASE}/volunteer-response`,
-  needCreated: `${env.NEXT_PUBLIC_API_BASE}/need-created`,
-} as const;
