@@ -24,8 +24,23 @@ export function validateEnv() {
   // If NEXT_PUBLIC_API_BASE is not provided, derive it from SUPABASE_URL
   const data = result.data;
   if (!data.NEXT_PUBLIC_API_BASE) {
-    const base = data.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/g, "");
-    data.NEXT_PUBLIC_API_BASE = `${base}/functions/v1`;
+    const supaUrl = data.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/g, "");
+    try {
+      const urlObj = new URL(supaUrl);
+      const host = urlObj.host; // e.g. 'abcxyz.supabase.co' or '127.0.0.1:54321'
+
+      // Production Supabase hosts functions on the functions subdomain (e.g. abcxyz.functions.supabase.co)
+      if (host.endsWith(".supabase.co") || host.endsWith(".supabase.in")) {
+        const projectRef = host.split(".")[0];
+        data.NEXT_PUBLIC_API_BASE = `${urlObj.protocol}//${projectRef}.functions.${host.split('.').slice(1).join('.')}`;
+      } else {
+        // Fallback: assume supabase CLI/local exposes functions under /functions/v1
+        data.NEXT_PUBLIC_API_BASE = `${supaUrl}/functions/v1`;
+      }
+    } catch (e) {
+      // If URL parsing fails, fallback to naive append
+      data.NEXT_PUBLIC_API_BASE = `${data.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/g, "")}/functions/v1`;
+    }
   }
 
   return data;
