@@ -73,21 +73,25 @@ export default function IngestPage() {
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
       const results = await Promise.all(
-        data.map(item =>
-          fetch(functionUrl, {
+        data.map(item => {
+          const hdrs: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          if (anonKey) {
+            hdrs['Authorization'] = `Bearer ${anonKey}`;
+            hdrs['apikey'] = anonKey;
+          }
+
+          return fetch(functionUrl, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${anonKey}`,
-              'apikey': anonKey
-            },
+            headers: hdrs,
             body: JSON.stringify({
               Body: item.description || item.text || item.Body || "Bulk ingested need",
               From: item.contact || item.From || "ngo_bulk_ingest",
               Source: "ngo_ingestion"
             })
-          })
-        )
+          });
+        })
       );
 
       const failures = results.filter(r => !r.ok);
