@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "ai-volunteer-mvp/frontend/package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "routes": []
+}
