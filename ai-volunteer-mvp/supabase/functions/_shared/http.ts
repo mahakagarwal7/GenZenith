@@ -1,8 +1,19 @@
-export function jsonResponse(body: unknown, status = 200): Response {
+export function getCorsHeaders(origin = '*') {
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, apikey',
+    // Do not expose credentials by default; set to 'true' only if you rely on cookies
+    'Access-Control-Allow-Credentials': 'false',
+  } as Record<string, string>;
+}
+
+export function jsonResponse(body: unknown, status = 200, origin = '*'): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
+      ...getCorsHeaders(origin),
     },
   });
 }
@@ -21,5 +32,5 @@ export async function parseJsonBody(req: Request): Promise<Record<string, unknow
 }
 
 export function methodNotAllowed(): Response {
-  return new Response('Method Not Allowed', { status: 405 });
+  return new Response('Method Not Allowed', { status: 405, headers: getCorsHeaders() });
 }

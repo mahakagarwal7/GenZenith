@@ -582,7 +582,7 @@ Deno.serve(async (req) => {
       if (upperBody === 'NO') {
         return new Response('<Response><Message>Your request is still being handled. We will keep looking for a volunteer.</Message></Response>', {
           status: 200,
-          headers: { 'Content-Type': 'text/xml' },
+          headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
         });
       }
 
@@ -590,7 +590,7 @@ Deno.serve(async (req) => {
       if (!matchedVolunteerId) {
         return new Response('<Response><Message>A volunteer is still being matched. Please wait a moment and try YES again.</Message></Response>', {
           status: 200,
-          headers: { 'Content-Type': 'text/xml' },
+          headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
         });
       }
 
@@ -600,7 +600,7 @@ Deno.serve(async (req) => {
 
       return new Response(`<Response><Message>${prefix} for Need ${latestNeed.need_id}:\n${summary}</Message></Response>`, {
         status: 200,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
       });
     }
   }
@@ -644,7 +644,7 @@ Deno.serve(async (req) => {
       console.error('Failed to create need from message:', error);
       return new Response('<Response><Message>Sorry, we could not create your request.</Message></Response>', {
         status: 500,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
       });
     }
 
@@ -665,7 +665,7 @@ Deno.serve(async (req) => {
         const regionMsg = resolvedRegion ? ` in ${resolvedRegion}` : (geo?.city ? ` in ${geo.city}` : '');
         return new Response(
           `<Response><Message>Request received (ID: ${needIdNew}). Currently, we have no available volunteers${regionMsg}. We will notify you as soon as one is found. If you know a volunteer in this area, they can register at https://genzenith.in/register</Message></Response>`,
-          { status: 200, headers: { 'Content-Type': 'text/xml' } },
+          { status: 200, headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() } },
         );
       }
     }
@@ -673,13 +673,13 @@ Deno.serve(async (req) => {
     if (status === 'needs_validation') {
       return new Response(
         `<Response><Message>Request received (ID: ${needIdNew}). We could not confirm your location. Please reply with your city/region (example: "LOCATION: Kolkata, West Bengal").</Message></Response>`,
-        { status: 200, headers: { 'Content-Type': 'text/xml' } },
+        { status: 200, headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() } },
       );
     }
 
     return new Response(
       `<Response><Message>Request received. Your Need ID is ${needIdNew}. We are matching a volunteer now. Reply YES to receive the assigned volunteer details.</Message></Response>`,
-      { status: 200, headers: { 'Content-Type': 'text/xml' } },
+      { status: 200, headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() } },
     );
   }
 
@@ -695,7 +695,7 @@ Deno.serve(async (req) => {
     if (isTwilioForm) {
       return new Response('<Response><Message>We received your message. If you are replying to a match, please ensure you use YES or NO.</Message></Response>', {
         status: 200,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
       });
     }
     return jsonResponse({ error: 'Missing or invalid payload', needId, volunteerId, response: upperResponse }, 400);
@@ -786,7 +786,7 @@ ${summary}`,
 
       return new Response(`<Response><Message>${message}</Message></Response>`, {
         status: 200,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
       });
     }
 

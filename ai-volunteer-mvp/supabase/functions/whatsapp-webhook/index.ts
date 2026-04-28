@@ -1,5 +1,5 @@
 import { supabase } from '../_shared/supabase.ts';
-import { jsonResponse, methodNotAllowed, parseJsonBody, parseTwilioForm } from '../_shared/http.ts';
+import { jsonResponse, methodNotAllowed, parseJsonBody, parseTwilioForm, getCorsHeaders } from '../_shared/http.ts';
 import { aiTriage } from '../_shared/ai.ts';
 
 const DEFAULT_NGO_ID = Deno.env.get('DEFAULT_NGO_ID');
@@ -346,7 +346,7 @@ Deno.serve(async (req) => {
     if (isTwilioForm) {
       return new Response('<Response><Message>Missing message content.</Message></Response>', {
         status: 400,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
       });
     }
     return jsonResponse({ error: 'Missing payload' }, 400);
@@ -359,7 +359,7 @@ Deno.serve(async (req) => {
     // In a production setup, Twilio should be pointed to a router or volunteer-response directly.
     return new Response('<Response></Response>', {
       status: 200,
-      headers: { 'Content-Type': 'text/xml' },
+      headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
     });
   }
 
@@ -368,7 +368,7 @@ Deno.serve(async (req) => {
       if (isTwilioForm) {
         return new Response('<Response><Message>Service not configured.</Message></Response>', {
           status: 500,
-          headers: { 'Content-Type': 'text/xml' },
+          headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
         });
       }
       return jsonResponse({ error: 'Missing DEFAULT_NGO_ID configuration' }, 500);
@@ -488,8 +488,8 @@ Deno.serve(async (req) => {
     if (isTwilioForm) {
       return new Response(
         `<Response><Message>Request received. Your Need ID is ${responseNeedId}. We are matching a volunteer now. Reply YES to receive the assigned volunteer details.</Message></Response>`,
-        { status: 200, headers: { 'Content-Type': 'text/xml' } },
-      );
+        { status: 200, headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
+      });
     }
 
     return jsonResponse({
@@ -502,7 +502,7 @@ Deno.serve(async (req) => {
     if (isTwilioForm) {
       return new Response('<Response><Message>Sorry, we could not process your request.</Message></Response>', {
         status: 500,
-        headers: { 'Content-Type': 'text/xml' },
+        headers: { 'Content-Type': 'text/xml', ...getCorsHeaders() },
       });
     }
     return jsonResponse({ error: 'Pipeline failed' }, 500);
