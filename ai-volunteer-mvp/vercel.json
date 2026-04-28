@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "ai-volunteer-mvp/frontend/package.json",
+      "src": "frontend/package.json",
       "use": "@vercel/next"
     }
   ],

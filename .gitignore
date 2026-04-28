@@ -45,3 +45,5 @@ secrets/
 # Any stray JSON key files
 *.service-account.json
 service-account-*.json
+.vercel
+.env*.local
